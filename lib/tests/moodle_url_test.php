@@ -19,9 +19,10 @@ namespace core;
 /**
  * Tests for moodle_url.
  *
- * @package     core
- * @copyright   2018 Andrew Nicols <andrew@nicols.co.uk>
- * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @package   core
+ * @copyright 2018 Andrew Nicols <andrew@nicols.co.uk>
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers    \moodle_url
  */
 class moodle_url_test extends \advanced_testcase {
     /**
@@ -247,6 +248,22 @@ class moodle_url_test extends \advanced_testcase {
         // Should return an empty string if port not specified.
         $url = new \moodle_url('http://www.example.org/some/path/here.php');
         $this->assertSame('', $url->get_port());
+    }
+
+    /**
+     * Test exporting params for templates.
+     */
+    public function test_moodle_url_export_params_for_template() {
+        // Should return params in the URL.
+        $url = new \moodle_url('http://example.com/?tags[0]=123&tags[1]=456');
+        $expected = [
+            0 => ['name' => 'tags[0]', 'value' => '123'],
+            1 => ['name' => 'tags[1]', 'value' => '456']
+        ];
+        $this->assertEquals($expected, $url->export_params_for_template());
+
+        $url = new \moodle_url('http://example.com/?tags[]=123&tags[]=456');
+        $this->assertSame($expected, $url->export_params_for_template());
     }
 
     /**
