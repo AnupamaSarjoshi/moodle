@@ -119,9 +119,17 @@ $pendingupdate = false;
 // Load criteria to display.
 $completions = $info->get_completions($user->id);
 
+// Get activities visible to the user that have completion enabled.
+$visibleactivities = $info->get_user_activities_with_completion();
+
 // Loop through course criteria.
 foreach ($completions as $completion) {
     $criteria = $completion->get_criteria();
+
+    // Display only criteria related to visible activities.
+    if (!isset($visibleactivities[$criteria->moduleinstance])) {
+        continue;
+    }
 
     if (!$pendingupdate && $criteria->is_pending($completion)) {
         $pendingupdate = true;

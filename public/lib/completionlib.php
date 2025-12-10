@@ -1337,6 +1337,39 @@ class completion_info {
     }
 
     /**
+     * Return a list of activities that are visible on the course page and have completion enabled.
+     *
+     * Includes activities that the user can see on the course page (visible or restricted),
+     * but only returns those that have completion tracking enabled. Activities hidden from
+     * the user or located in hidden sections are excluded.
+     *
+     * @return array Array of user visible activities with completion enabled.
+     */
+    public function get_user_activities_with_completion(): array {
+        $format = course_get_format($this->course);
+        $visible = [];
+
+        $activities = $this->get_activities();
+        foreach ($activities as $cm) {
+            // Case 1: Visible activity.
+            if ($cm->uservisible) {
+                $visible[$cm->id] = 1;
+                continue;
+            }
+
+            // Case 2: Restricted activities that are not in the hidden section are visible on the page.
+            if (!empty($cm->availableinfo)) {
+                $section = $format->get_section($cm->sectionnum);
+
+                if (!empty($section) && !empty($section->uservisible)) {
+                    $visible[$cm->id] = 1;
+                }
+            }
+        }
+        return $visible;
+    }
+
+    /**
      * Checks to see if the userid supplied has a tracked role in
      * this course
      *

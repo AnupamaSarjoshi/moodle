@@ -104,10 +104,18 @@ class block_completionstatus extends block_base {
             // Flag to set if current completion data is inconsistent with what is stored in the database.
             $pending_update = false;
 
+            // Get activities visible to the user that have completion enabled.
+            $visibleactivities = $info->get_user_activities_with_completion();
+
             // Loop through course criteria.
             foreach ($completions as $completion) {
                 $criteria = $completion->get_criteria();
                 $complete = $completion->is_complete();
+
+                // Display only criteria related to visible activities.
+                if (!isset($visibleactivities[$criteria->moduleinstance])) {
+                    continue;
+                }
 
                 if (!$pending_update && $criteria->is_pending($completion)) {
                     $pending_update = true;
