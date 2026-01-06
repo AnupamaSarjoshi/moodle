@@ -95,6 +95,23 @@ class restore_plan extends base_plan implements loggable {
         return $this->controller->get_logger();
     }
 
+
+    /**
+     * Returns the import structure flag
+     * @return bool
+     */
+    public function get_importstructure() {
+        return $this->controller->get_importstructure();
+    }
+
+    /**
+     * Returns fields that we want to skip importing
+     * @return array
+     */
+    public function get_skipimportfields() {
+        return $this->controller->get_skipimportfields();
+    }
+
     /**
      * Gets the progress reporter, which can be used to report progress within
      * the backup or restore process.

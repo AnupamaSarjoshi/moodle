@@ -96,6 +96,22 @@ abstract class restore_task extends base_task {
     }
 
     /**
+     * Returns the overwrite structure flag
+     * @return bool
+     */
+    public function get_importstructure() {
+        return $this->plan->get_importstructure();
+    }
+
+    /**
+     * Returns fields that we want to skip importing
+     * @return array
+     */
+    public function get_skipimportfields() {
+        return $this->plan->get_skipimportfields();
+    }
+
+    /**
      * Given a commment area, return the itemname that contains the itemid mappings
      *
      * By default, both are the same (commentarea = itemname), so return it. If some

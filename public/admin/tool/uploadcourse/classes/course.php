@@ -100,10 +100,16 @@ class tool_uploadcourse_course {
     /** @var int update mode. Matches tool_uploadcourse_processor::UPDATE_* */
     protected $updatemode;
 
+    /** @var array skip import fields. Used to skip importing fields defined in csv when importstructure is true */
+    protected $skipimportfields = [];
+
+    /** @var bool set to true once we want to import course structure from the templatecourse */
+    protected $importstructure = false;
+
     /** @var array fields allowed as course data. */
     static protected $validfields = array('fullname', 'shortname', 'idnumber', 'category', 'visible', 'startdate', 'enddate',
         'summary', 'format', 'theme', 'lang', 'newsitems', 'showgrades', 'showreports', 'legacyfiles', 'maxbytes',
-        'groupmode', 'groupmodeforce', 'enablecompletion', 'downloadcontent', 'showactivitydates');
+        'groupmode', 'groupmodeforce', 'enablecompletion', 'downloadcontent', 'showactivitydates', 'importstructure');
 
     /** @var array fields required on course creation. */
     static protected $mandatoryfields = array('fullname', 'category');
@@ -485,7 +491,9 @@ class tool_uploadcourse_course {
         foreach ($this->rawdata as $field => $value) {
             if (!in_array($field, self::$validfields)) {
                 continue;
-            } else if ($field == 'shortname') {
+            }
+            $this->skipimportfields[] = $field;
+            if ($field == 'shortname') {
                 // Let's leave it apart from now, use $this->shortname only.
                 continue;
             }
@@ -817,6 +825,10 @@ class tool_uploadcourse_course {
             }
         }
 
+        if (isset($coursedata['importstructure']) && $coursedata['importstructure']) {
+            $this->importstructure = true;
+        }
+
         // Saving data.
         $this->data = $coursedata;
 
@@ -911,8 +923,19 @@ class tool_uploadcourse_course {
 
         // Restore a course.
         if (!empty($this->restoredata)) {
-            $rc = new restore_controller($this->restoredata, $course->id, backup::INTERACTIVE_NO,
-                backup::MODE_IMPORT, $USER->id, backup::TARGET_CURRENT_ADDING);
+            $rc = new restore_controller(
+                $this->restoredata,
+                $course->id,
+                backup::INTERACTIVE_NO,
+                backup::MODE_IMPORT,
+                $USER->id,
+                backup::TARGET_CURRENT_ADDING,
+                null,
+                null,
+                null,
+                $this->importstructure,
+                $this->skipimportfields
+            );
 
             // Check if the format conversion must happen first.
             if ($rc->get_status() == backup::STATUS_REQUIRE_CONV) {

@@ -67,8 +67,24 @@ class restore_course_task extends restore_task {
         $this->contextid = context_course::instance($this->get_courseid())->id;
 
         // Executed conditionally if restoring to new course or if overwrite_conf setting is enabled
-        if ($this->get_target() == backup::TARGET_NEW_COURSE || $this->get_setting_value('overwrite_conf') == true) {
-            $this->add_step(new restore_course_structure_step('course_info', 'course.xml'));
+        $importstructure = false;
+        $skipimportfields = null;
+        if (!is_null($this->plan) && ($this->plan instanceof restore_plan)) {
+            $importstructure = $this->plan->get_importstructure();
+            $skipimportfields = $this->plan->get_skipimportfields();
+        }
+        if (
+            $this->get_target() == backup::TARGET_NEW_COURSE ||
+            $this->get_setting_value('overwrite_conf') == true ||
+            $importstructure == true
+        ) {
+            $this->add_step(new restore_course_structure_step(
+                'course_info',
+                'course.xml',
+                null,
+                $importstructure,
+                $skipimportfields
+            ));
 
             // Search reindexing (if enabled).
             if (\core_search\manager::is_indexing_enabled()) {

@@ -29,6 +29,7 @@ defined('MOODLE_INTERNAL') || die();
 
 use core_question\local\bank\question_version_status;
 use core_question\versions;
+use core_reportbuilder\local\models\report;
 
 /**
  * delete old directories and conditionally create backup_temp_ids table
@@ -1929,6 +1930,31 @@ class restore_course_structure_step extends restore_structure_step {
      */
     protected $legacyallowedmodules = array();
 
+    /**
+     * @var bool set to true once we want to import course structure from the templatecourse
+     */
+    protected $importstructure = false;
+
+    /**
+     * @var array skip import fields. Used to skip importing fields defined in csv when importstructure is true
+     */
+    protected $skipimportfields = null;
+
+    /**
+     * Step constructor.
+     * @param string $name Step's name.
+     * @param string $filename Step's file name.
+     * @param restore_task|null $task Restore task.
+     * @param bool $importstructure  True once we want to import course structure from the templatecourse.
+     * @param array|null $skipimportfields Skip fields when importing the course structure.
+     * @throws restore_step_exception
+     */
+    public function __construct($name, $filename, $task = null, $importstructure = false, $skipimportfields = null) {
+        parent::__construct($name, $filename, $task);
+        $this->importstructure = $importstructure;
+        $this->skipimportfields = $skipimportfields;
+    }
+
     protected function define_structure() {
 
         $paths = [];
@@ -1936,31 +1962,38 @@ class restore_course_structure_step extends restore_structure_step {
         $course = new restore_path_element('course', '/course');
         $paths[] = $course;
         $paths[] = new restore_path_element('category', '/course/category');
-        $paths[] = new restore_path_element('tag', '/course/tags/tag');
-        $paths[] = new restore_path_element('course_format_option', '/course/courseformatoptions/courseformatoption');
+        if (!$this->importstructure || !isset($this->skipimportfields) || !in_array('tags', $this->skipimportfields)) {
+            $paths[] = new restore_path_element('tag', '/course/tags/tag');
+        }
+        if (!$this->importstructure || !isset($this->skipimportfields) || !in_array('format', $this->skipimportfields)) {
+            $paths[] = new restore_path_element('course_format_option', '/course/courseformatoptions/courseformatoption');
+        }
         $paths[] = new restore_path_element('allowed_module', '/course/allowed_modules/module');
 
         // Custom fields.
         if ($this->get_setting_value('customfield')) {
             $paths[] = new restore_path_element('customfield', '/course/customfields/customfield');
         }
+        if (!$this->importstructure || !isset($this->skipimportfields) || !in_array('format', $this->skipimportfields)) {
+            // Apply for 'format' plugins optional paths at course level.
+            $this->add_plugin_structure('format', $course);
+        }
 
-        // Apply for 'format' plugins optional paths at course level
-        $this->add_plugin_structure('format', $course);
+        if (!$this->importstructure || !isset($this->skipimportfields) || !in_array('theme', $this->skipimportfields)) {
+            // Apply for 'theme' plugins optional paths at course level.
+            $this->add_plugin_structure('theme', $course);
+        }
 
-        // Apply for 'theme' plugins optional paths at course level
-        $this->add_plugin_structure('theme', $course);
-
-        // Apply for 'report' plugins optional paths at course level
+        // Apply for 'report' plugins optional paths at course level.
         $this->add_plugin_structure('report', $course);
 
-        // Apply for 'course report' plugins optional paths at course level
+        // Apply for 'course report' plugins optional paths at course level.
         $this->add_plugin_structure('coursereport', $course);
 
-        // Apply for plagiarism plugins optional paths at course level
+        // Apply for plagiarism plugins optional paths at course level.
         $this->add_plugin_structure('plagiarism', $course);
 
-        // Apply for local plugins optional paths at course level
+        // Apply for local plugins optional paths at course level.
         $this->add_plugin_structure('local', $course);
 
         // Apply for admin tool plugins optional paths at course level.
@@ -2088,7 +2121,22 @@ class restore_course_structure_step extends restore_structure_step {
             $data->activitytype = 'scorm';
         }
 
-        // Course record ready, update it
+        // Process import setting.
+        if ($this->importstructure) {
+            if (isset($this->skipimportfields)) {
+                foreach ($this->skipimportfields as $field) {
+                    if (isset($data->{$field})) {
+                        if ($field == "format" && $data->format == 'singleactivity' && isset($data->activitytype)) {
+                            unset($data->activitytype);
+                        } else if ($field == "summary" && isset($data->summaryformat)) {
+                            unset($data->summaryformat);
+                        }
+                        unset($data->{$field});
+                    }
+                }
+            }
+        }
+        // Course record ready, update it.
         $DB->update_record('course', $data);
 
         // Apply any course format options that may be saved against the course
@@ -2166,7 +2214,9 @@ class restore_course_structure_step extends restore_structure_step {
         global $DB;
 
         // Add course related files, without itemid to match
-        $this->add_related_files('course', 'summary', null);
+        if (!$this->importstructure || !isset($this->skipimportfields) || !in_array('summary', $this->skipimportfields)) {
+             $this->add_related_files('course', 'summary', null);
+        }
         $this->add_related_files('course', 'overviewfiles', null);
 
         // Deal with legacy allowed modules.
