@@ -77,7 +77,7 @@ class progress {
         }
 
         // Get the number of modules that have been completed.
-        $totalcompleted = $completion->count_modules_completed($userid);
+        $totalcompleted = $completion->count_modules_completed($userid, array_keys($modules));
 
         return ($totalcompleted / $count) * 100;
     }
