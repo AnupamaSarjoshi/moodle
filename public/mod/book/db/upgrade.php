@@ -62,7 +62,7 @@ function xmldb_book_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026022300, 'book');
     }
 
-    if ($oldversion < 2025100600) {
+    if ($oldversion < 2026030200) {
         // Adds the new field to the user completion criteria.
         $table = new xmldb_table('book');
         $field = new xmldb_field('readpercent', XMLDB_TYPE_INTEGER, '4', null, false, null, '0', 'revision');
@@ -91,7 +91,7 @@ function xmldb_book_upgrade($oldversion) {
         }
 
         // Book savepoint reached.
-        upgrade_mod_savepoint(true, 2025100600, 'book');
+        upgrade_mod_savepoint(true, 2026030200, 'book');
     }
 
     // Automatically generated Moodle v5.1.0 release upgrade line.
