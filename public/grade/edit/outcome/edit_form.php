@@ -47,12 +47,14 @@ class edit_outcome_form extends moodleform {
         $mform->addElement('advcheckbox', 'standard', get_string('outcomestandard', 'grades'));
         $mform->addHelpButton('standard', 'outcomestandard', 'grades');
 
-        $options = array();
+        $options = [];
 
         $mform->addElement('selectwithlink', 'scaleid', get_string('scale'), $options, null,
-            array('link' => $CFG->wwwroot.'/grade/edit/scale/edit.php?courseid='.$COURSE->id, 'label' => get_string('scalescustomcreate')));
+            ['link' => $CFG->wwwroot.'/grade/edit/scale/edit.php?courseid='.$COURSE->id, 'label' => get_string('scalescustomcreate')]);
         $mform->addHelpButton('scaleid', 'typescale', 'grades');
-        $mform->addRule('scaleid', get_string('required'), 'required');
+        // Scale is optional for learning outcomes; the requirement to link every outcome
+        // to a scale has been removed as part of the Outcomes → Learning Outcomes migration.
+        $mform->setDefault('scaleid', 0);
 
         $mform->addElement('editor', 'description_editor', get_string('description'), null, $this->_customdata['editoroptions']);
 
@@ -80,9 +82,10 @@ class edit_outcome_form extends moodleform {
 
         $mform =& $this->_form;
 
-        // first load proper scales
+        // first load proper scales and prepend a 'none' option so that scale is optional.
+        $noneLabel = get_string('none');
         if ($courseid = $mform->getElementValue('courseid')) {
-            $options = array();
+            $options = [0 => $noneLabel];
             if ($scales = grade_scale::fetch_all_local($courseid)) {
                 $options[-1] = '--'.get_string('scalescustom');
                 foreach($scales as $scale) {
@@ -99,7 +102,7 @@ class edit_outcome_form extends moodleform {
             $scale_el->load($options);
 
         } else {
-            $options = array();
+            $options = [0 => $noneLabel];
             if ($scales = grade_scale::fetch_all_global()) {
                 foreach($scales as $scale) {
                     $options[$scale->id] = $scale->get_name();
@@ -140,14 +143,12 @@ class edit_outcome_form extends moodleform {
     function validation($data, $files) {
         $errors = parent::validation($data, $files);
 
-        if ($data['scaleid'] < 1) {
-            $errors['scaleid'] = get_string('required');
-        }
-
-        if (!empty($data['standard']) and $scale = grade_scale::fetch(array('id'=>$data['scaleid']))) {
-            if (!empty($scale->courseid)) {
-                //TODO: localize
-                $errors['scaleid'] = 'Can not use custom scale in global outcome!';
+        // Scale is optional. Only validate the scale if one has been selected.
+        if (!empty($data['scaleid']) && $data['scaleid'] > 0) {
+            if (!empty($data['standard']) && $scale = grade_scale::fetch(['id' => $data['scaleid']])) {
+                if (!empty($scale->courseid)) {
+                    $errors['scaleid'] = get_string('error');
+                }
             }
         }
 
