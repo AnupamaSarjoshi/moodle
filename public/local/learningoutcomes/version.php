@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_learningoutcomes';
-$plugin->version   = 2026052100;
+$plugin->version   = 2026052101;
 $plugin->requires  = 2026041000;
 $plugin->maturity  = MATURITY_ALPHA;
 $plugin->release   = '1.0.0';
