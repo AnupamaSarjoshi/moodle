@@ -1,0 +1,143 @@
+{{!
+    Template: local_learningoutcomes/alignment_report
+    Renders the two-way coverage alignment report for a course.
+
+    Context variables:
+      courseid            {number}
+      hasoutcomes         {boolean}
+      outcomes            {array}   Array of outcome rows with:
+        id, shortname, fullname, hasactivities, activities, activitycount
+      untaggedactivities  {array}   Array of {name, tagurl} activity rows.
+      score               {number}  Coverage score (float, 0–100).
+      scorepercent        {string}  Formatted integer percent.
+      tagged              {number}  Number of tagged non-decorative cms.
+      untagged            {number}  Number of untagged non-decorative cms.
+      decorative          {number}  Number of decorative/informational cms.
+      manageurl           {string}  URL to manage outcomes.
+      fullyaligned        {boolean} True when score == 100.
+
+    @template  local_learningoutcomes/alignment_report
+    @copyright 2026 Moodle Pty Ltd
+    @license   https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+}}
+<div class="lo-alignment-report">
+
+    {{^hasoutcomes}}
+    <div class="alert alert-warning" role="alert">
+        {{#str}} nooutcomesdefined, local_learningoutcomes {{/str}}
+        <a href="{{manageurl}}" class="alert-link">
+            {{#str}} addoutcomeslink, local_learningoutcomes {{/str}}
+        </a>
+    </div>
+    {{/hasoutcomes}}
+
+    {{#hasoutcomes}}
+
+    {{! --- Alignment score summary --- }}
+    <div class="lo-alignment-score card mb-4" aria-label="{{#str}} alignmentscore, local_learningoutcomes {{/str}}">
+        <div class="card-body d-flex align-items-center gap-4">
+            <div
+                class="lo-score-circle rounded-circle d-flex align-items-center justify-content-center
+                       {{#fullyaligned}}bg-success{{/fullyaligned}}
+                       {{^fullyaligned}}bg-warning{{/fullyaligned}}
+                       text-white"
+                style="width:80px;height:80px;font-size:1.4rem;font-weight:700;"
+                aria-label="{{scorepercent}}%"
+            >
+                {{scorepercent}}%
+            </div>
+            <div>
+                <p class="mb-1">
+                    {{#str}} taggedcount, local_learningoutcomes, {{tagged}} {{/str}}
+                </p>
+                {{#untagged}}
+                <p class="mb-1 text-danger">
+                    {{#str}} untaggedcount, local_learningoutcomes, {{untagged}} {{/str}}
+                </p>
+                {{/untagged}}
+                {{#decorative}}
+                <p class="mb-0 text-muted small">
+                    {{#str}} decorativecount, local_learningoutcomes, {{decorative}} {{/str}}
+                </p>
+                {{/decorative}}
+            </div>
+        </div>
+    </div>
+
+    {{! --- Outcomes coverage table --- }}
+    <h3 class="h5 mb-3">{{#str}} courseoutcomes, local_learningoutcomes {{/str}}</h3>
+    <div class="table-responsive mb-4">
+        <table class="table table-bordered table-sm lo-outcomes-table" aria-label="{{#str}} reportheading, local_learningoutcomes {{/str}}">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col">{{#str}} outcomerow, local_learningoutcomes {{/str}}</th>
+                    <th scope="col">{{#str}} activitiestaggedto, local_learningoutcomes {{/str}}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#outcomes}}
+                <tr class="{{^hasactivities}}table-danger{{/hasactivities}}">
+                    <td>
+                        <span class="fw-semibold">{{shortname}}</span>
+                        <br>
+                        <span class="text-muted small">{{fullname}}</span>
+                    </td>
+                    <td>
+                        {{#hasactivities}}
+                        <ul class="list-unstyled mb-0">
+                            {{#activities}}
+                            <li>
+                                {{#viewurl}}<a href="{{viewurl}}">{{name}}</a>{{/viewurl}}
+                                {{^viewurl}}{{name}}{{/viewurl}}
+                            </li>
+                            {{/activities}}
+                        </ul>
+                        {{/hasactivities}}
+                        {{^hasactivities}}
+                        <span class="text-danger" aria-label="{{#str}} notcovered, local_learningoutcomes {{/str}}">
+                            —
+                        </span>
+                        {{/hasactivities}}
+                    </td>
+                </tr>
+                {{/outcomes}}
+            </tbody>
+        </table>
+    </div>
+
+    {{! --- Untagged activities --- }}
+    {{#untaggedactivities}}
+    <h3 class="h5 mb-3">{{#str}} activitieswithoutoutcomes, local_learningoutcomes {{/str}}</h3>
+    <div class="table-responsive mb-4">
+        <table class="table table-bordered table-sm lo-untagged-table" aria-label="{{#str}} activitieswithoutoutcomes, local_learningoutcomes {{/str}}">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col">{{#str}} activityrow, local_learningoutcomes {{/str}}</th>
+                    <th scope="col">{{#str}} actions {{/str}}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#untaggedactivities}}
+                <tr>
+                    <td>{{name}}</td>
+                    <td>
+                        <a href="{{tagurl}}" class="btn btn-sm btn-outline-primary">
+                            {{#str}} tagactivities, local_learningoutcomes {{/str}}
+                        </a>
+                    </td>
+                </tr>
+                {{/untaggedactivities}}
+            </tbody>
+        </table>
+    </div>
+    {{/untaggedactivities}}
+
+    {{^untaggedactivities}}
+    <div class="alert alert-success" role="alert">
+        {{#str}} fullycovered, local_learningoutcomes {{/str}}
+    </div>
+    {{/untaggedactivities}}
+
+    {{/hasoutcomes}}
+
+</div>

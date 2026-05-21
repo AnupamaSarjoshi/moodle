@@ -52,6 +52,18 @@ function local_learningoutcomes_extend_navigation_course(
             new pix_icon('i/outcomes', '')
         );
     }
+
+    if (has_capability('local/learningoutcomes:viewreport', $context)) {
+        $reporturl = new moodle_url('/local/learningoutcomes/alignment.php', ['courseid' => $course->id]);
+        $navigation->add(
+            get_string('alignmentreport', 'local_learningoutcomes'),
+            $reporturl,
+            navigation_node::TYPE_SETTING,
+            null,
+            'learningoutcomesreport',
+            new pix_icon('i/report', '')
+        );
+    }
 }
 
 /**
