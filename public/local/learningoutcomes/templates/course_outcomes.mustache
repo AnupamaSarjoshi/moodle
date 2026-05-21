@@ -1,0 +1,51 @@
+{{!
+    Template: local_learningoutcomes/course_outcomes
+    Renders the prominent course-level learning outcomes surface on the
+    course main page.
+
+    Context variables:
+      courseid     {number}   Course ID.
+      hasoutcomes  {boolean}  Whether the course has any outcomes defined.
+      outcomes     {array}    Array of {id, shortname, fullname}.
+      canmanage    {boolean}  Whether the current user can manage outcomes.
+      manageurl    {string}   URL to the manage page.
+
+    @template  local_learningoutcomes/course_outcomes
+    @copyright 2026 Moodle Pty Ltd
+    @license   https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+}}
+<section
+    class="lo-course-outcomes card mb-4"
+    aria-labelledby="lo-course-outcomes-heading"
+>
+    <div class="card-body">
+        <h2 class="card-title h5" id="lo-course-outcomes-heading">
+            {{#str}} coursepageheading, local_learningoutcomes {{/str}}
+        </h2>
+
+        {{#hasoutcomes}}
+        <ol class="lo-outcomes-list ps-3 mb-0" aria-label="{{#str}} learningoutcomes, local_learningoutcomes {{/str}}">
+            {{#outcomes}}
+            <li class="lo-outcome-item mb-1">
+                <span class="lo-outcome-shortname fw-semibold me-1">{{shortname}}</span>
+                <span class="lo-outcome-fullname">{{fullname}}</span>
+            </li>
+            {{/outcomes}}
+        </ol>
+        {{/hasoutcomes}}
+
+        {{^hasoutcomes}}
+        <p class="text-muted mb-0">
+            {{#str}} nooutcomes, local_learningoutcomes {{/str}}
+        </p>
+        {{/hasoutcomes}}
+
+        {{#canmanage}}
+        <div class="mt-3">
+            <a href="{{manageurl}}" class="btn btn-sm btn-outline-primary">
+                {{#str}} manageoutcomes, local_learningoutcomes {{/str}}
+            </a>
+        </div>
+        {{/canmanage}}
+    </div>
+</section>

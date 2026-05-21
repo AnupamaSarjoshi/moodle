@@ -1,0 +1,39 @@
+{{!
+    Template: local_learningoutcomes/activity_outcomes
+    Renders the per-activity learning outcomes surface on activity entry pages.
+    Students see which outcomes this activity contributes to.
+
+    Context variables:
+      courseid         {number}   Course ID.
+      cmid             {number}   Course module ID.
+      hasoutcomes      {boolean}  Whether any outcomes are tagged to this activity.
+      outcomes         {array}    Array of {id, shortname, fullname}.
+      courseoutcomesurl {string}  URL to the course outcomes manage/view page.
+
+    @template  local_learningoutcomes/activity_outcomes
+    @copyright 2026 Moodle Pty Ltd
+    @license   https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+}}
+{{#hasoutcomes}}
+<section
+    class="lo-activity-outcomes card mb-3"
+    aria-labelledby="lo-activity-outcomes-heading-{{cmid}}"
+>
+    <div class="card-body py-2">
+        <h3 class="card-title h6 mb-2" id="lo-activity-outcomes-heading-{{cmid}}">
+            {{#str}} activitysupports, local_learningoutcomes {{/str}}
+        </h3>
+        <ul class="list-unstyled mb-0">
+            {{#outcomes}}
+            <li class="lo-activity-outcome d-flex align-items-start mb-1">
+                <span class="badge bg-primary me-2 mt-1 flex-shrink-0" aria-hidden="true">{{shortname}}</span>
+                <span>{{fullname}}</span>
+            </li>
+            {{/outcomes}}
+        </ul>
+        <a href="{{courseoutcomesurl}}" class="btn btn-sm btn-link ps-0 mt-1">
+            {{#str}} viewalloutcomes, local_learningoutcomes {{/str}}
+        </a>
+    </div>
+</section>
+{{/hasoutcomes}}

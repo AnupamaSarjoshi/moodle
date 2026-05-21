@@ -75,6 +75,46 @@ class manager {
     }
 
     /**
+     * Returns the outcomes to display on the course "What you will learn" block.
+     *
+     * Includes:
+     *   - All course-scoped outcomes defined for this course.
+     *   - Site-wide (standard) outcomes that are tagged to at least one
+     *     activity in this course.
+     *
+     * Course-scoped outcomes take precedence if an ID collision ever occurs.
+     *
+     * @param int $courseid The course ID.
+     * @return stdClass[] Indexed by outcome ID, sorted by shortname within each group.
+     */
+    public static function get_outcomes_for_course_page(int $courseid): array {
+        global $DB;
+
+        // All course-scoped outcomes (always shown on the course page).
+        $courseoutcomes = $DB->get_records('grade_outcomes', ['courseid' => $courseid], 'shortname ASC');
+
+        // Find the distinct outcome IDs tagged to any activity in this course.
+        $usedrows = $DB->get_records('local_lo_activity_outcome', ['courseid' => $courseid], '', 'outcomeid');
+        if (empty($usedrows)) {
+            return $courseoutcomes;
+        }
+
+        $usedids = array_keys($usedrows);
+
+        // From the used IDs, keep only the site-wide ones (courseid IS NULL).
+        [$insql, $inparams] = $DB->get_in_or_equal($usedids, SQL_PARAMS_NAMED);
+        $siteoutcomes = $DB->get_records_select(
+            'grade_outcomes',
+            "courseid IS NULL AND id $insql",
+            $inparams,
+            'shortname ASC'
+        );
+
+        // Course-scoped outcomes take precedence; site outcomes appended after.
+        return $courseoutcomes + $siteoutcomes;
+    }
+
+    /**
      * Creates a new course-scoped learning outcome.
      *
      * @param int $courseid The course ID.
