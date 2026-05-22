@@ -229,12 +229,27 @@ class manager {
     }
 
     /**
-     * Replaces the set of outcomes tagged to a course module.
+     * Returns whether the teacher has explicitly marked a CM as decorative/informational.
+     *
+     * @param int $cmid The course module ID.
+     * @param int $courseid The course ID.
+     * @return bool
+     */
+    public static function get_cm_decorative(int $cmid, int $courseid): bool {
+        global $DB;
+
+        $rec = $DB->get_record('local_lo_cm_settings', ['cmid' => $cmid, 'courseid' => $courseid], 'decorative');
+        return $rec ? (bool) $rec->decorative : false;
+    }
+
+    /**
+     * Replaces the set of outcomes tagged to a course module and persists the
+     * decorative override flag.
      *
      * @param int $cmid The course module ID.
      * @param int $courseid The course ID.
      * @param int[] $outcomeids New set of outcome IDs (may be empty).
-     * @param bool $isdecorative Whether this activity is marked as decorative.
+     * @param bool $isdecorative Whether the teacher has marked this activity as decorative.
      */
     public static function set_cm_outcomes(int $cmid, int $courseid, array $outcomeids, bool $isdecorative = false): void {
         global $DB, $USER;
@@ -247,6 +262,25 @@ class manager {
                 'courseid'     => $courseid,
                 'cmid'         => $cmid,
                 'outcomeid'    => (int) $outcomeid,
+                'timecreated'  => $now,
+                'timemodified' => $now,
+                'usermodified' => $USER->id,
+            ]);
+        }
+
+        // Persist the explicit decorative override so the nudge can suppress
+        // warnings for activities the teacher has intentionally left untagged.
+        $existing = $DB->get_record('local_lo_cm_settings', ['cmid' => $cmid, 'courseid' => $courseid]);
+        if ($existing) {
+            $existing->decorative   = (int) $isdecorative;
+            $existing->timemodified = $now;
+            $existing->usermodified = $USER->id;
+            $DB->update_record('local_lo_cm_settings', $existing);
+        } else {
+            $DB->insert_record('local_lo_cm_settings', (object) [
+                'courseid'     => $courseid,
+                'cmid'         => $cmid,
+                'decorative'   => (int) $isdecorative,
                 'timecreated'  => $now,
                 'timemodified' => $now,
                 'usermodified' => $USER->id,
@@ -282,8 +316,7 @@ class manager {
     public static function get_alignment_score(int $courseid): array {
         global $DB;
 
-        // All visible, non-label course modules (approximate; decorative detection
-        // is done by checking whether the cm has no grade weight and no completion).
+        // All visible course modules.
         $modinfo = get_fast_modinfo($courseid);
         $cms = $modinfo->get_cms();
 
@@ -323,29 +356,38 @@ class manager {
     }
 
     /**
-     * Heuristically determines whether a course module is decorative (i.e. not
-     * expected to contribute to a learning outcome).
+     * Returns whether a course module should be excluded from the alignment
+     * gap analysis.
      *
-     * The heuristic checks:
-     *   1. The activity type is 'label' (always decorative).
-     *   2. The activity has no grade weight AND no completion condition.
+     * Two cases are treated as decorative / informational:
+     *   1. The activity type is 'label' (always presentational, never substantive).
+     *   2. The teacher has explicitly ticked "informational/decorative" in the
+     *      activity settings form (stored in local_lo_cm_settings.decorative).
      *
-     * This is intentionally conservative; a false negative (marking a decorative
-     * activity as non-decorative) is less harmful than a false positive.
+     * Deliberately no grade-item or completion heuristic: those would silently
+     * exclude substantive activities (e.g. an ungraded forum) and cause a
+     * discrepancy between this report and the course-page nudge widget, which
+     * relies solely on the explicit teacher flag via get_cm_decorative().
      *
      * @param \cm_info $cm The course module info object.
-     * @return bool True if the activity is decorative.
+     * @return bool True if the activity should be excluded from gap analysis.
      */
     public static function is_decorative(\cm_info $cm): bool {
+        global $DB;
+
+        // Highest priority: teacher has explicitly marked this activity as
+        // informational/decorative via the activity settings form.
+        if ($DB->record_exists('local_lo_cm_settings',
+                ['cmid' => $cm->id, 'courseid' => $cm->course, 'decorative' => 1])) {
+            return true;
+        }
+
+        // label modules are always presentational.
         if ($cm->modname === 'label') {
             return true;
         }
 
-        // No completion condition and no grade weight.
-        $nocompletion = ($cm->completion == COMPLETION_DISABLED || $cm->completion == COMPLETION_TRACKING_NONE);
-        $nograde = (empty($cm->grademax) && empty($cm->gradepass));
-
-        return $nocompletion && $nograde;
+        return false;
     }
 
     /**

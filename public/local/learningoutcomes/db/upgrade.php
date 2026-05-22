@@ -130,5 +130,34 @@ function xmldb_local_learningoutcomes_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026052101, 'local', 'learningoutcomes');
     }
 
+    // -------------------------------------------------------------------------
+    // 2026052102 – Add local_lo_cm_settings table to store explicit per-cm
+    //              decorative override set by teachers via the tagging widget.
+    // -------------------------------------------------------------------------
+    if ($oldversion < 2026052102) {
+        $dbman = $DB->get_manager();
+
+        $table = new xmldb_table('local_lo_cm_settings');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null, null);
+        $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null, null);
+        $table->add_field('decorative', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null, '0');
+        $table->add_field('usermodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null, '0');
+
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('fk_courseid', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+        $table->add_key('fk_cmid', XMLDB_KEY_FOREIGN, ['cmid'], 'course_modules', ['id']);
+        $table->add_key('fk_usermodified', XMLDB_KEY_FOREIGN, ['usermodified'], 'user', ['id']);
+        $table->add_key('uq_courseid_cmid', XMLDB_KEY_UNIQUE, ['courseid', 'cmid']);
+
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026052102, 'local', 'learningoutcomes');
+    }
+
     return true;
 }
