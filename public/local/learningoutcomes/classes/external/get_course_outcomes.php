@@ -70,18 +70,24 @@ class get_course_outcomes extends external_api {
         $tagged   = $params['cmid'] > 0
             ? manager::get_cm_outcome_ids($params['cmid'], $params['courseid'])
             : [];
+        $isdecorative = $params['cmid'] > 0
+            ? manager::get_cm_decorative($params['cmid'], $params['courseid'])
+            : false;
 
         $result = [];
         foreach ($outcomes as $outcome) {
             $result[] = [
-                'id'        => (int) $outcome->id,
-                'shortname' => $outcome->shortname,
-                'fullname'  => $outcome->fullname,
-                'tagged'    => in_array((int) $outcome->id, $tagged),
+                'id'          => (int) $outcome->id,
+                'shortname'   => $outcome->shortname,
+                'fullname'    => $outcome->fullname,
+                'tagged'      => in_array((int) $outcome->id, $tagged),
             ];
         }
 
-        return $result;
+        return [
+            'outcomes'    => $result,
+            'isdecorative' => $isdecorative,
+        ];
     }
 
     /**
@@ -89,14 +95,17 @@ class get_course_outcomes extends external_api {
      *
      * @return external_multiple_structure
      */
-    public static function execute_returns(): external_multiple_structure {
-        return new external_multiple_structure(
-            new external_single_structure([
-                'id'        => new external_value(PARAM_INT, 'Outcome ID'),
-                'shortname' => new external_value(PARAM_TEXT, 'Short name / code'),
-                'fullname'  => new external_value(PARAM_TEXT, 'Full outcome statement'),
-                'tagged'    => new external_value(PARAM_BOOL, 'Whether this outcome is tagged to the given CM'),
-            ])
-        );
+    public static function execute_returns(): external_single_structure {
+        return new external_single_structure([
+            'outcomes' => new external_multiple_structure(
+                new external_single_structure([
+                    'id'        => new external_value(PARAM_INT, 'Outcome ID'),
+                    'shortname' => new external_value(PARAM_TEXT, 'Short name / code'),
+                    'fullname'  => new external_value(PARAM_TEXT, 'Full outcome statement'),
+                    'tagged'    => new external_value(PARAM_BOOL, 'Whether this outcome is tagged to the given CM'),
+                ])
+            ),
+            'isdecorative' => new external_value(PARAM_BOOL, 'Whether the teacher has marked this CM as decorative/informational'),
+        ]);
     }
 }
