@@ -77,6 +77,7 @@ $string['activitytagsaved'] = 'Activity outcome tags saved.';
 $string['selectoutcomes'] = 'Select learning outcomes';
 $string['decorativeactivity'] = 'This is an informational or decorative activity';
 $string['decorativeactivity_help'] = 'Mark this activity as informational or decorative if it does not contribute to any learning outcome (for example, a label used as a section heading or an announcement forum). It will not appear as an untagged gap in the alignment report.';
+$string['decorativebadge'] = 'Informational / decorative';
 
 // Student-facing strings.
 $string['learningoutcomes'] = 'Learning outcomes';
@@ -108,11 +109,9 @@ $string['activityrow'] = 'Activity';
 
 // Nudge / incomplete course notices.
 $string['nudge:incomplete'] = 'This course has fewer than the recommended {$a->min} learning outcomes. <a href="{$a->url}">Add learning outcomes</a> to help students understand what they will achieve.';
-$string['nudge:untagged'] = '{$a->count} {$a->activities} in this course {$a->are} not linked to any learning outcome. <a href="{$a->url}">View the alignment report</a> to identify and close the gaps.';
-$string['nudge:activity'] = 'singular';
-$string['nudge:activities'] = 'plural';
-$string['nudge:is'] = 'is';
-$string['nudge:are'] = 'are';
+$string['nudge:untagged'] = '{count} {activities} in this course still need at least one learning outcome. <a href="{url}">View the alignment report</a> to identify and close the gaps.';
+$string['nudge:activity'] = 'activity';
+$string['nudge:activities'] = 'activities';
 
 // Course settings (inline toggle on course settings page).
 $string['courseenabled'] = 'Enable learning outcomes for this course';
