@@ -1,14 +1,17 @@
 {{!
     Template: local_learningoutcomes/activity_outcomes
     Renders the per-activity learning outcomes surface on activity entry pages.
-    Students see which outcomes this activity contributes to.
+    Both teachers and students see which outcomes this activity contributes to.
+    Students are shown a link to the read-only view page; teachers get the
+    management page.
 
     Context variables:
-      courseid         {number}   Course ID.
-      cmid             {number}   Course module ID.
-      hasoutcomes      {boolean}  Whether any outcomes are tagged to this activity.
-      outcomes         {array}    Array of {id, shortname, fullname}.
-      courseoutcomesurl {string}  URL to the course outcomes manage/view page.
+      courseid          {number}   Course ID.
+      cmid              {number}   Course module ID.
+      hasoutcomes       {boolean}  Whether any outcomes are tagged to this activity.
+      outcomes          {array}    Array of {id, shortname, fullname}.
+      canmanage         {boolean}  Whether the current user can manage outcomes.
+      courseoutcomesurl {string}   URL to the view or manage page (role-dependent).
 
     @template  local_learningoutcomes/activity_outcomes
     @copyright 2026 Moodle Pty Ltd
@@ -32,7 +35,12 @@
             {{/outcomes}}
         </ul>
         <a href="{{courseoutcomesurl}}" class="btn btn-sm btn-link ps-0 mt-1">
+            {{#canmanage}}
+            {{#str}} manageoutcomes, local_learningoutcomes {{/str}}
+            {{/canmanage}}
+            {{^canmanage}}
             {{#str}} viewalloutcomes, local_learningoutcomes {{/str}}
+            {{/canmanage}}
         </a>
     </div>
 </section>

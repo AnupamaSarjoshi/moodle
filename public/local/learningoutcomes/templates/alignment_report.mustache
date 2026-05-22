@@ -106,7 +106,7 @@
     </div>
 
     {{! --- Untagged activities --- }}
-    {{#untaggedactivities}}
+    {{#hasuntaggedactivities}}
     <h3 class="h5 mb-3">{{#str}} activitieswithoutoutcomes, local_learningoutcomes {{/str}}</h3>
     <div class="table-responsive mb-4">
         <table class="table table-bordered table-sm lo-untagged-table" aria-label="{{#str}} activitieswithoutoutcomes, local_learningoutcomes {{/str}}">
@@ -130,13 +130,13 @@
             </tbody>
         </table>
     </div>
-    {{/untaggedactivities}}
+    {{/hasuntaggedactivities}}
 
-    {{^untaggedactivities}}
+    {{^hasuntaggedactivities}}
     <div class="alert alert-success" role="alert">
         {{#str}} fullycovered, local_learningoutcomes {{/str}}
     </div>
-    {{/untaggedactivities}}
+    {{/hasuntaggedactivities}}
 
     {{/hasoutcomes}}
 

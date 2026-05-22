@@ -1,14 +1,14 @@
 {{!
     Template: local_learningoutcomes/course_outcomes
     Renders the prominent course-level learning outcomes surface on the
-    course main page.
+    course main page and the standalone view page.
 
     Context variables:
       courseid     {number}   Course ID.
       hasoutcomes  {boolean}  Whether the course has any outcomes defined.
       outcomes     {array}    Array of {id, shortname, fullname}.
       canmanage    {boolean}  Whether the current user can manage outcomes.
-      manageurl    {string}   URL to the manage page.
+      manageurl    {string}   URL to the manage page (used when canmanage).
 
     @template  local_learningoutcomes/course_outcomes
     @copyright 2026 Moodle Pty Ltd

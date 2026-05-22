@@ -153,6 +153,7 @@ class alignment_report implements renderable, templatable {
             ['courseid' => $this->courseid]
         ))->out(false);
 
+        $data->hasuntaggedactivities = !empty($data->untaggedactivities);
         $data->scorepercent = number_format($score['score'], 0);
         $data->fullyaligned = $score['score'] >= 100.0;
 
