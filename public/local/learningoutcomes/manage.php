@@ -45,7 +45,8 @@ require_capability('local/learningoutcomes:manage', $context);
 
 // Check site feature switch.
 if (!get_config('local_learningoutcomes', 'enabled')) {
-    throw new moodle_exception('error:nopermission', 'local_learningoutcomes');
+    throw new moodle_exception('error:nopermission', 'local_learningoutcomes',
+        new moodle_url('/course/view.php', ['id' => $courseid]));
 }
 
 $manageurl    = new moodle_url('/local/learningoutcomes/manage.php', ['courseid' => $courseid]);
