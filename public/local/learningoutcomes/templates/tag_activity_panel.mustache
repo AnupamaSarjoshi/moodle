@@ -2,13 +2,20 @@
     Template: local_learningoutcomes/tag_activity_panel
     Renders the inline tagging panel for a single activity.
 
+    The panel is a <details> element whose <summary> colour-codes the nudge state:
+      - no class         : initial state before JS applies colour
+      - lo-state-untagged   : amber warning — needs at least one outcome
+      - lo-state-tagged     : green check — at least one outcome tagged
+      - lo-state-decorative : grey — teacher marked this as informational
+
     Context variables:
-      cmid         {number}   Course module ID.
-      courseid     {number}   Course ID.
-      outcomes     {array}    Array of {id, shortname, fullname, tagged} objects.
-      taglabel     {string}   Localised "Tag activity" label.
-      savelabel    {string}   Localised "Save changes" label.
-      decorativelabel {string} Localised "Decorative activity" label.
+      cmid            {number}   Course module ID.
+      courseid        {number}   Course ID.
+      outcomes        {array}    Array of {id, shortname, fullname, tagged} objects.
+      isdecorative    {boolean}  Whether the teacher has marked this CM as decorative.
+      taglabel        {string}   Localised "Link to learning outcomes" label.
+      savelabel       {string}   Localised "Save changes" label.
+      decorativelabel {string}   Localised "Decorative/informational activity" label.
 
     @template  local_learningoutcomes/tag_activity_panel
     @copyright 2026 Moodle Pty Ltd
@@ -34,7 +41,7 @@
         </div>
         {{/outcomes}}
         {{^outcomes}}
-        <p class="text-muted mb-1">{{{{taglabel}}}}</p>
+        <p class="text-muted fst-italic mb-1">{{nooutcomeslabel}}</p>
         {{/outcomes}}
         <div class="form-check mt-2">
             <input
@@ -42,6 +49,7 @@
                 type="checkbox"
                 id="lo-decorative-{{cmid}}"
                 data-decorative="1"
+                {{#isdecorative}}checked{{/isdecorative}}
             >
             <label class="form-check-label text-muted" for="lo-decorative-{{cmid}}">
                 {{decorativelabel}}
