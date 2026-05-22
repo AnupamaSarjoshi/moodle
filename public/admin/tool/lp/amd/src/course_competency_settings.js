@@ -141,11 +141,12 @@ define(['jquery',
      */
     settingsMod.prototype.refreshCourseCompetenciesPage = function() {
         var courseId = this._find('input[name="courseid"]').val();
+        var moduleId = parseInt($('[data-region="coursecompetenciespage"]').data('moduleid')) || 0;
         var pendingPromise = new Pending();
 
         ajax.call([
             {methodname: 'tool_lp_data_for_course_competencies_page',
-              args: {courseid: courseId, moduleid: 0}}
+              args: {courseid: courseId, moduleid: moduleId}}
         ])[0]
         .then(function(context) {
             return templates.render('tool_lp/course_competencies_page', context);

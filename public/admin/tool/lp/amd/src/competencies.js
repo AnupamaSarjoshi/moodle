@@ -37,11 +37,13 @@ define(['jquery',
      * @param {Number} itemid
      * @param {String} itemtype
      * @param {Number} pagectxid
+     * @param {Number} moduleid
      */
-    var competencies = function(itemid, itemtype, pagectxid) {
+    var competencies = function(itemid, itemtype, pagectxid, moduleid) {
         this.itemid = itemid;
         this.itemtype = itemtype;
         this.pageContextId = pagectxid;
+        this._moduleid = moduleid || 0;
         this.pickerInstance = null;
 
         $('[data-region="actions"] button').prop('disabled', false);
@@ -147,7 +149,7 @@ define(['jquery',
                     });
                     requests.push({
                         methodname: 'tool_lp_data_for_course_competencies_page',
-                        args: {courseid: self.itemid, moduleid: 0}
+                        args: {courseid: self.itemid, moduleid: self._moduleid}
                     });
 
                     pagerender = 'tool_lp/course_competencies_page';
@@ -218,7 +220,7 @@ define(['jquery',
                 {methodname: 'core_competency_remove_competency_from_course',
                     args: {courseid: localthis.itemid, competencyid: deleteid}},
                 {methodname: 'tool_lp_data_for_course_competencies_page',
-                    args: {courseid: localthis.itemid, moduleid: 0}}
+                    args: {courseid: localthis.itemid, moduleid: localthis._moduleid}}
             ]);
             pagerender = 'tool_lp/course_competencies_page';
             pageregion = 'coursecompetenciespage';
@@ -318,7 +320,7 @@ define(['jquery',
                     {methodname: 'core_competency_set_course_competency_ruleoutcome',
                       args: {coursecompetencyid: coursecompetencyid, ruleoutcome: ruleoutcome}},
                     {methodname: 'tool_lp_data_for_course_competencies_page',
-                      args: {courseid: localthis.itemid, moduleid: 0}}
+                      args: {courseid: localthis.itemid, moduleid: localthis._moduleid}}
                 ]);
 
                 requests[1].then(function(context) {

@@ -51,7 +51,7 @@
         }]
     }
 }}
-<div data-region="coursecompetenciespage">
+<div data-region="coursecompetenciespage" data-moduleid="{{moduleid}}">
     <div data-region="actions" class="clearfix">
         <div class="float-sm-start">
             {{#canmanagecoursecompetencies}}
@@ -175,7 +175,7 @@
 </div>
 {{#js}}
 require(['tool_lp/competencies'], function(mod) {
-    (new mod({{courseid}}, 'course', {{pagecontextid}}));
+    (new mod({{courseid}}, 'course', {{pagecontextid}}, {{moduleid}}));
 });
 {{/js}}
 {{#canconfigurecoursecompetencies}}
