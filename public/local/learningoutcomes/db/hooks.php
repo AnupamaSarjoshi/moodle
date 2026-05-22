@@ -24,7 +24,12 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$hooks = [
+$callbacks = [
+    [
+        'hook'     => \core\hook\output\before_http_headers::class,
+        'callback' => \local_learningoutcomes\hook_listener::class . '::before_http_headers',
+        'priority' => 200,
+    ],
     [
         'hook'     => \core\hook\output\before_footer_html_generation::class,
         'callback' => \local_learningoutcomes\hook_listener::class . '::before_footer_html_generation',
