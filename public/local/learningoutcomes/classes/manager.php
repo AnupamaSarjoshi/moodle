@@ -24,6 +24,7 @@
 
 namespace local_learningoutcomes;
 
+use grade_item;
 use moodle_exception;
 use stdClass;
 
@@ -285,6 +286,93 @@ class manager {
                 'timemodified' => $now,
                 'usermodified' => $USER->id,
             ]);
+        }
+    }
+
+    /**
+     * Syncs gradebook grade_item rows for outcomes that carry a scale.
+     *
+     * - For each selected outcome that has a scaleid: ensures a grade_item
+     *   (itemnumber >= 1) exists for this activity.  The main grade item
+     *   (itemnumber = 0) is never touched, so course-level grading is
+     *   unaffected.
+     * - For each outcome grade_item whose outcome is no longer selected:
+     *   deletes that grade_item.
+     *
+     * Outcomes without a scale are curriculum-mapping tags only and never
+     * produce a grade_item.
+     *
+     * @param stdClass $moduleinfo Module info from coursemodule_edit_post_actions.
+     * @param int      $courseid   Course ID.
+     * @param int[]    $selectedids Outcome IDs the teacher selected on the form.
+     */
+    public static function sync_outcome_grade_items(stdClass $moduleinfo, int $courseid, array $selectedids): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/gradelib.php');
+
+        $modulename   = $moduleinfo->modulename;
+        $iteminstance = (int) $moduleinfo->instance;
+
+        // Fetch selected outcomes that carry a scale.
+        $scaledoutcomes = [];
+        if (!empty($selectedids)) {
+            [$insql, $inparams] = $DB->get_in_or_equal($selectedids, SQL_PARAMS_NAMED);
+            $scaledoutcomes = $DB->get_records_select(
+                'grade_outcomes',
+                "id $insql AND scaleid IS NOT NULL AND scaleid > 0",
+                $inparams
+            );
+        }
+
+        // All grade items (any itemnumber) for this activity instance.
+        $allitems = grade_item::fetch_all([
+            'courseid'     => $courseid,
+            'itemtype'     => 'mod',
+            'itemmodule'   => $modulename,
+            'iteminstance' => $iteminstance,
+        ]) ?: [];
+
+        // Build a map of outcomeid => grade_item for existing outcome items.
+        $existingbyoutcome = [];
+        $maxitemnumber     = 0;
+        foreach ($allitems as $item) {
+            $maxitemnumber = max($maxitemnumber, (int) $item->itemnumber);
+            if (!empty($item->outcomeid)) {
+                $existingbyoutcome[(int) $item->outcomeid] = $item;
+            }
+        }
+
+        $wantedids = array_map('intval', array_keys($scaledoutcomes));
+
+        // Create a grade_item for each scaled outcome that doesn't have one yet.
+        foreach ($scaledoutcomes as $outcome) {
+            $outcomeid = (int) $outcome->id;
+            if (isset($existingbyoutcome[$outcomeid])) {
+                continue; // already exists
+            }
+            $maxitemnumber++;
+            grade_update(
+                'local_learningoutcomes',
+                $courseid,
+                'mod',
+                $modulename,
+                $iteminstance,
+                $maxitemnumber,
+                null,
+                [
+                    'gradetype' => GRADE_TYPE_SCALE,
+                    'scaleid'   => (int) $outcome->scaleid,
+                    'outcomeid' => $outcomeid,
+                    'itemname'  => $outcome->fullname,
+                ]
+            );
+        }
+
+        // Delete grade_items for outcomes that were deselected or lost their scale.
+        foreach ($existingbyoutcome as $outcomeid => $item) {
+            if (!in_array($outcomeid, $wantedids, true)) {
+                $item->delete('local_learningoutcomes');
+            }
         }
     }
 
