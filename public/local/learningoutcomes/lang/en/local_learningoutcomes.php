@@ -48,7 +48,7 @@ $string['settings:enforcement_hard'] = 'Hard (blocks save and publish)';
 
 // Course management page.
 $string['manageoutcomes'] = 'Manage learning outcomes';
-$string['courseoutcomes'] = 'Course learning outcomes';
+$string['courseoutcomes'] = 'Learning outcomes';
 $string['addoutcome'] = 'Add learning outcome';
 $string['editoutcome'] = 'Edit learning outcome';
 $string['deleteoutcome'] = 'Delete learning outcome';
@@ -71,7 +71,7 @@ $string['outcomedescription_help'] = 'An extended description of the outcome, if
 // Activity tagging.
 $string['tagactivities'] = 'Tag activities';
 $string['tagactivity'] = 'Link to learning outcomes';
-$string['tagactivity_help'] = 'Select the learning outcomes this activity contributes to. Students will see these links on the activity page.';
+$string['tagactivity_help'] = 'Select the learning outcomes this activity contributes to. Students will see these on the activity page.';
 $string['nooutcomestotag'] = 'No learning outcomes are defined for this course. <a href="{$a}">Add learning outcomes</a> before tagging activities.';
 $string['activitytagsaved'] = 'Activity outcome tags saved.';
 $string['selectoutcomes'] = 'Select learning outcomes';

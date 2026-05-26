@@ -4,11 +4,12 @@
     course main page and the standalone view page.
 
     Context variables:
-      courseid     {number}   Course ID.
-      hasoutcomes  {boolean}  Whether the course has any outcomes defined.
-      outcomes     {array}    Array of {id, shortname, fullname}.
-      canmanage    {boolean}  Whether the current user can manage outcomes.
-      manageurl    {string}   URL to the manage page (used when canmanage).
+      courseid         {number}   Course ID.
+      hasoutcomes      {boolean}  Whether the course has any outcomes defined.
+      showdescription  {boolean}  Whether to render outcome descriptions.
+      outcomes         {array}    Array of {id, shortname, fullname[, description, hasdescription]}.
+      canmanage        {boolean}  Whether the current user can manage outcomes.
+      manageurl        {string}   URL to the manage page (used when canmanage).
 
     @template  local_learningoutcomes/course_outcomes
     @copyright 2026 Moodle Pty Ltd
@@ -24,14 +25,32 @@
         </h2>
 
         {{#hasoutcomes}}
-        <ol class="lo-outcomes-list ps-3 mb-0" aria-label="{{#str}} learningoutcomes, local_learningoutcomes {{/str}}">
+        <ul class="list-unstyled mb-0" aria-label="{{#str}} learningoutcomes, local_learningoutcomes {{/str}}">
             {{#outcomes}}
             <li class="lo-outcome-item mb-1">
-                <span class="lo-outcome-shortname fw-semibold me-1">{{shortname}}</span>
-                <span class="lo-outcome-fullname">{{fullname}}</span>
+                {{#hasdescription}}
+                <button class="lo-outcome-toggle btn btn-link p-0 text-start collapsed d-flex align-items-start"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#lo-outcome-desc-{{id}}"
+                        aria-expanded="false"
+                        aria-controls="lo-outcome-desc-{{id}}">
+                    <span class="badge bg-primary me-2 mt-1 flex-shrink-0" aria-hidden="true">{{shortname}}</span>
+                    <span>{{fullname}}</span>
+                    <i class="fa fa-chevron-right lo-toggle-chevron ms-2 mt-1" aria-hidden="true"></i>
+                </button>
+                <div class="collapse" id="lo-outcome-desc-{{id}}">
+                    <div class="lo-outcome-description text-muted small mt-1 ms-1">{{{description}}}</div>
+                </div>
+                {{/hasdescription}}
+                {{^hasdescription}}
+                <div class="d-flex align-items-start">
+                    <span class="badge bg-primary me-2 mt-1 flex-shrink-0" aria-hidden="true">{{shortname}}</span>
+                    <span>{{fullname}}</span>
+                </div>
+                {{/hasdescription}}
             </li>
             {{/outcomes}}
-        </ol>
+        </ul>
         {{/hasoutcomes}}
 
         {{^hasoutcomes}}

@@ -26,6 +26,7 @@
  * @license   https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 require_once(__DIR__ . '/../../config.php');
+require_once(__DIR__ . '/lib.php');
 
 use local_learningoutcomes\manager;
 use local_learningoutcomes\output\course_outcomes;
@@ -59,10 +60,17 @@ $PAGE->navbar->add(
 $canmanage = has_capability('local/learningoutcomes:manage', $context);
 $outcomes  = manager::get_available_outcomes($courseid);
 
-$renderable = new course_outcomes($courseid, $outcomes, $canmanage);
+$renderable = new course_outcomes($courseid, $outcomes, $canmanage, $PAGE->url, true);
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('learningoutcomes', 'local_learningoutcomes'));
+
+$backurl = get_local_referer(false) ?: new moodle_url('/course/view.php', ['id' => $courseid]);
+echo html_writer::div(
+    html_writer::link($backurl, get_string('back'), ['class' => 'btn btn-secondary mb-3']),
+    'mb-3'
+);
+
 echo $OUTPUT->render_from_template(
     'local_learningoutcomes/course_outcomes',
     $renderable->export_for_template($OUTPUT)

@@ -1,0 +1,37 @@
+/**
+ * Styles for local_learningoutcomes.
+ *
+ * Keep rules minimal — rely on Bootstrap/Moodle utilities wherever possible.
+ *
+ * @package   local_learningoutcomes
+ * @copyright 2026 Moodle Pty Ltd
+ * @license   https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
+/* ── Collapsible outcome toggle (course_outcomes template) ──────────────── */
+
+/**
+ * WCAG 2.2 Level AA – 2.4.7 Focus Visible / 2.4.11 Focus Appearance.
+ * Solid 3 px outline meets the minimum area and 3:1 contrast requirements.
+ * Bootstrap's default box-shadow focus ring is not used here because its
+ * semi-transparent colour cannot be guaranteed to meet 2.4.11 in all themes.
+ */
+.lo-outcome-toggle:focus-visible {
+    outline: 3px solid currentColor;
+    outline-offset: 2px;
+    border-radius: 2px;
+    text-decoration: none;
+}
+
+/**
+ * Chevron rotation — Bootstrap's Collapse plugin automatically adds/removes
+ * the .collapsed class on the trigger element, which drives this animation.
+ */
+.lo-outcome-toggle .lo-toggle-chevron {
+    display: inline-block;
+    transition: transform 0.2s ease;
+}
+
+.lo-outcome-toggle:not(.collapsed) .lo-toggle-chevron {
+    transform: rotate(90deg);
+}
