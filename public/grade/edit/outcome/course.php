@@ -102,6 +102,13 @@ foreach ($standardoutcomes as $oid=>$outcome) {
     }
 }
 
+// Exclude outcomes that have no scale — they belong to the Learning Outcomes
+// plugin and are not meaningful in a grading context.
+$hasscale = function($outcome) { return !empty($outcome->scaleid); };
+$co_custom           = array_filter($co_custom,           $hasscale);
+$co_standard_used    = array_filter($co_standard_used,    $hasscale);
+$co_standard_notused = array_filter($co_standard_notused, $hasscale);
+$standardoutcomes    = array_filter($standardoutcomes,    $hasscale);
 
 /// form processing
 if ($data = data_submitted() and confirm_sesskey()) {
