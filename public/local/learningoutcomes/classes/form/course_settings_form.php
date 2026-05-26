@@ -71,7 +71,10 @@ class course_settings_form extends moodleform {
         $mform->addElement('hidden', 'courseid');
         $mform->setType('courseid', PARAM_INT);
 
-        $this->add_action_buttons();
+        // Left-aligned save button only — the Back button on the page replaces Cancel.
+        $mform->addElement('html', '<div class="mt-3 mb-3">'
+            . '<button type="submit" name="submitbutton" value="1" class="btn btn-primary">'
+            . get_string('savechanges') . '</button></div>');
     }
 
     /**

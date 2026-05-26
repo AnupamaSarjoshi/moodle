@@ -27,8 +27,9 @@ require_once(__DIR__ . '/../../config.php');
 use local_learningoutcomes\manager;
 use local_learningoutcomes\form\edit_outcome_form;
 
-$courseid = required_param('courseid', PARAM_INT);
-$id       = optional_param('id', 0, PARAM_INT);
+$courseid  = required_param('courseid', PARAM_INT);
+$id        = optional_param('id', 0, PARAM_INT);
+$returnurl = optional_param('returnurl', '', PARAM_LOCALURL);
 
 $course  = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 $context = context_course::instance($courseid);
@@ -41,10 +42,17 @@ if (!get_config('local_learningoutcomes', 'enabled')) {
         new moodle_url('/course/view.php', ['id' => $courseid]));
 }
 
-$manageurl = new moodle_url('/local/learningoutcomes/manage.php', ['courseid' => $courseid]);
+$manageurlparams = ['courseid' => $courseid];
+if ($returnurl !== '') {
+    $manageurlparams['returnurl'] = $returnurl;
+}
+$manageurl = new moodle_url('/local/learningoutcomes/manage.php', $manageurlparams);
 $editurl   = new moodle_url('/local/learningoutcomes/edit.php', ['courseid' => $courseid]);
 if ($id) {
     $editurl->param('id', $id);
+}
+if ($returnurl !== '') {
+    $editurl->param('returnurl', $returnurl);
 }
 
 $PAGE->set_url($editurl);

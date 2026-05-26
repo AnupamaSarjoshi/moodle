@@ -45,17 +45,28 @@ class course_outcomes implements renderable, templatable {
     /** @var bool Whether the current user can manage outcomes. */
     protected bool $canmanage;
 
+    /** @var \moodle_url|null The URL to return to after managing outcomes. */
+    protected ?\moodle_url $returnurl;
+
+    /** @var bool Whether to include outcome descriptions in the exported data. */
+    protected bool $showdescription;
+
     /**
      * Constructor.
      *
      * @param int $courseid The course ID.
      * @param stdClass[] $outcomes Array of outcome records.
      * @param bool $canmanage Whether the current user can manage outcomes.
+     * @param \moodle_url|null $returnurl URL to return to after managing (e.g. the course page).
+     * @param bool $showdescription Whether to include outcome descriptions.
      */
-    public function __construct(int $courseid, array $outcomes, bool $canmanage = false) {
-        $this->courseid = $courseid;
-        $this->outcomes = $outcomes;
-        $this->canmanage = $canmanage;
+    public function __construct(int $courseid, array $outcomes, bool $canmanage = false,
+            ?\moodle_url $returnurl = null, bool $showdescription = false) {
+        $this->courseid         = $courseid;
+        $this->outcomes         = $outcomes;
+        $this->canmanage        = $canmanage;
+        $this->returnurl        = $returnurl;
+        $this->showdescription  = $showdescription;
     }
 
     /**
@@ -69,19 +80,31 @@ class course_outcomes implements renderable, templatable {
         $data->courseid  = $this->courseid;
         $data->canmanage = $this->canmanage;
         $data->hasoutcomes = !empty($this->outcomes);
+        $data->showdescription = $this->showdescription;
 
         $data->outcomes = [];
         foreach ($this->outcomes as $outcome) {
-            $data->outcomes[] = (object) [
+            $item = (object) [
                 'id'        => (int) $outcome->id,
                 'shortname' => format_string($outcome->shortname),
                 'fullname'  => format_string($outcome->fullname),
             ];
+            if ($this->showdescription) {
+                $item->description = !empty($outcome->description)
+                    ? format_text($outcome->description, $outcome->descriptionformat ?? FORMAT_HTML)
+                    : '';
+                $item->hasdescription = $item->description !== '';
+            }
+            $data->outcomes[] = $item;
         }
 
+        $manageParams = ['courseid' => $this->courseid];
+        if ($this->returnurl !== null) {
+            $manageParams['returnurl'] = $this->returnurl->out(false);
+        }
         $data->manageurl = (new \moodle_url(
             '/local/learningoutcomes/manage.php',
-            ['courseid' => $this->courseid]
+            $manageParams
         ))->out(false);
 
         return $data;

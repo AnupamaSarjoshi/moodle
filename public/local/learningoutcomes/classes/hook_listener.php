@@ -145,7 +145,7 @@ class hook_listener {
             $outcomes  = manager::get_outcomes_for_course_page($courseid);
             $canmanage = has_capability('local/learningoutcomes:manage', $context);
 
-            $renderable = new course_outcomes($courseid, $outcomes, $canmanage);
+            $renderable = new course_outcomes($courseid, $outcomes, $canmanage, $PAGE->url);
             $html = $OUTPUT->render_from_template(
                 'local_learningoutcomes/course_outcomes',
                 $renderable->export_for_template($OUTPUT)
@@ -187,7 +187,7 @@ class hook_listener {
             $outcomerecords = array_intersect_key($all, array_flip($outcomeids));
 
             $canmanage  = has_capability('local/learningoutcomes:manage', $context);
-            $renderable = new activity_outcomes($courseid, $cmid, $outcomerecords, $canmanage);
+            $renderable = new activity_outcomes($courseid, $cmid, $outcomerecords, $canmanage, $PAGE->url);
             $html = $OUTPUT->render_from_template(
                 'local_learningoutcomes/activity_outcomes',
                 $renderable->export_for_template($OUTPUT)

@@ -49,6 +49,9 @@ class activity_outcomes implements renderable, templatable {
     /** @var bool Whether the current user can manage outcomes. */
     protected bool $canmanage;
 
+    /** @var \moodle_url|null The URL to return to after managing outcomes. */
+    protected ?\moodle_url $returnurl;
+
     /**
      * Constructor.
      *
@@ -56,12 +59,15 @@ class activity_outcomes implements renderable, templatable {
      * @param int $cmid The course module ID.
      * @param stdClass[] $outcomes Outcome records for this cm.
      * @param bool $canmanage Whether the current user can manage outcomes.
+     * @param \moodle_url|null $returnurl URL to return to after managing (e.g. the activity page).
      */
-    public function __construct(int $courseid, int $cmid, array $outcomes, bool $canmanage = false) {
-        $this->courseid  = $courseid;
-        $this->cmid      = $cmid;
-        $this->outcomes  = $outcomes;
-        $this->canmanage = $canmanage;
+    public function __construct(int $courseid, int $cmid, array $outcomes, bool $canmanage = false,
+            ?\moodle_url $returnurl = null) {
+        $this->courseid   = $courseid;
+        $this->cmid       = $cmid;
+        $this->outcomes   = $outcomes;
+        $this->canmanage  = $canmanage;
+        $this->returnurl  = $returnurl;
     }
 
     /**
@@ -87,11 +93,15 @@ class activity_outcomes implements renderable, templatable {
         }
 
         // Teachers link to the management page; students get the read-only view page.
+        $manageParams = ['courseid' => $this->courseid];
+        if ($this->canmanage && $this->returnurl !== null) {
+            $manageParams['returnurl'] = $this->returnurl->out(false);
+        }
         $data->courseoutcomesurl = (new \moodle_url(
             $this->canmanage
                 ? '/local/learningoutcomes/manage.php'
                 : '/local/learningoutcomes/view.php',
-            ['courseid' => $this->courseid]
+            $manageParams
         ))->out(false);
 
         return $data;

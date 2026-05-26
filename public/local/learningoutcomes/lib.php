@@ -37,12 +37,19 @@ function local_learningoutcomes_extend_navigation_course(
     stdClass $course,
     context_course $context
 ): void {
-    if (!local_learningoutcomes_is_enabled_for_course($course->id)) {
+    global $PAGE;
+    // Respect the site-level master switch; course-level disable is not checked
+    // here because teachers must still be able to reach the manage page to
+    // re-enable outcomes for the course.
+    if (!get_config('local_learningoutcomes', 'enabled')) {
         return;
     }
 
     if (has_capability('local/learningoutcomes:manage', $context)) {
-        $url = new moodle_url('/local/learningoutcomes/manage.php', ['courseid' => $course->id]);
+        $url = new moodle_url('/local/learningoutcomes/manage.php', [
+            'courseid'  => $course->id,
+            'returnurl' => $PAGE->url->out(false),
+        ]);
         $navigation->add(
             get_string('manageoutcomes', 'local_learningoutcomes'),
             $url,
@@ -53,7 +60,9 @@ function local_learningoutcomes_extend_navigation_course(
         );
     }
 
-    if (has_capability('local/learningoutcomes:viewreport', $context)) {
+    // The alignment report is only useful when outcomes are active for the course.
+    if (local_learningoutcomes_is_enabled_for_course($course->id)
+            && has_capability('local/learningoutcomes:viewreport', $context)) {
         $reporturl = new moodle_url('/local/learningoutcomes/alignment.php', ['courseid' => $course->id]);
         $navigation->add(
             get_string('alignmentreport', 'local_learningoutcomes'),
@@ -132,6 +141,20 @@ function local_learningoutcomes_coursemodule_standard_elements(
         return;
     }
 
+    // Remove the core grade-outcomes section (modoutcomes header + individual
+    // outcome_N checkboxes) so there is exactly one "Learning outcomes" surface
+    // on the form.  The plugin section below replaces it: same data source
+    // (grade_outcomes), better UX, no mandatory scale requirement.
+    if ($mform->elementExists('modoutcomes')) {
+        $mform->removeElement('modoutcomes');
+    }
+    foreach ($outcomes as $outcome) {
+        $elname = 'outcome_' . $outcome->id;
+        if ($mform->elementExists($elname)) {
+            $mform->removeElement($elname);
+        }
+    }
+
     $mform->addElement('header', 'learningoutcomessection',
         get_string('courseoutcomes', 'local_learningoutcomes'));
 
@@ -184,6 +207,10 @@ function local_learningoutcomes_coursemodule_edit_post_actions(stdClass $modulei
     // Preserve the existing decorative flag; only the outcome selection changes here.
     $isdecorative = \local_learningoutcomes\manager::get_cm_decorative($cmid, $courseid);
     \local_learningoutcomes\manager::set_cm_outcomes($cmid, $courseid, $newids, $isdecorative);
+
+    // Create / delete gradebook grade_items for outcomes that carry a scale.
+    // Outcomes without a scale remain curriculum-mapping tags only.
+    \local_learningoutcomes\manager::sync_outcome_grade_items($moduleinfo, $courseid, $newids);
 
     return $moduleinfo;
 }

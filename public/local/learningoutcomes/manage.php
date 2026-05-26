@@ -32,10 +32,11 @@ require_once($CFG->libdir . '/adminlib.php');
 use local_learningoutcomes\manager;
 use local_learningoutcomes\form\course_settings_form;
 
-$courseid = required_param('courseid', PARAM_INT);
-$action   = optional_param('action', '', PARAM_ALPHA);
-$id       = optional_param('id', 0, PARAM_INT);
-$confirm  = optional_param('confirm', 0, PARAM_BOOL);
+$courseid  = required_param('courseid', PARAM_INT);
+$action    = optional_param('action', '', PARAM_ALPHA);
+$id        = optional_param('id', 0, PARAM_INT);
+$confirm   = optional_param('confirm', 0, PARAM_BOOL);
+$returnurl = optional_param('returnurl', '', PARAM_LOCALURL);
 
 $course  = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 $context = context_course::instance($courseid);
@@ -49,8 +50,16 @@ if (!get_config('local_learningoutcomes', 'enabled')) {
         new moodle_url('/course/view.php', ['id' => $courseid]));
 }
 
-$manageurl    = new moodle_url('/local/learningoutcomes/manage.php', ['courseid' => $courseid]);
-$editurl      = new moodle_url('/local/learningoutcomes/edit.php', ['courseid' => $courseid]);
+$manageurlparams = ['courseid' => $courseid];
+if ($returnurl !== '') {
+    $manageurlparams['returnurl'] = $returnurl;
+}
+$manageurl    = new moodle_url('/local/learningoutcomes/manage.php', $manageurlparams);
+$editurlparams = ['courseid' => $courseid];
+if ($returnurl !== '') {
+    $editurlparams['returnurl'] = $returnurl;
+}
+$editurl      = new moodle_url('/local/learningoutcomes/edit.php', $editurlparams);
 $alignmenturl = new moodle_url('/local/learningoutcomes/alignment.php', ['courseid' => $courseid]);
 
 $PAGE->set_url($manageurl);
@@ -104,6 +113,16 @@ $PAGE->navbar->add(get_string('manageoutcomes', 'local_learningoutcomes'), $mana
 
 echo $OUTPUT->heading(get_string('manageoutcomes', 'local_learningoutcomes'), 2);
 
+if ($returnurl !== '') {
+    $backurl = new moodle_url($returnurl);
+} else {
+    $backurl = get_local_referer(false) ?: new moodle_url('/local/learningoutcomes/view.php', ['courseid' => $courseid]);
+}
+echo html_writer::div(
+    html_writer::link($backurl, get_string('back'), ['class' => 'btn btn-secondary mb-3']),
+    'mb-3'
+);
+
 // --- Course settings toggle -----------------------------------------
 
 $settingsform->display();
@@ -147,8 +166,9 @@ if (empty($outcomes)) {
     ];
 
     foreach ($outcomes as $outcome) {
+        $outcomeEditUrl = new moodle_url($editurl, ['id' => $outcome->id]);
         $editlink   = html_writer::link(
-            new moodle_url('/local/learningoutcomes/edit.php', ['courseid' => $courseid, 'id' => $outcome->id]),
+            $outcomeEditUrl,
             get_string('edit')
         );
         $deletelink = html_writer::link(
@@ -174,6 +194,7 @@ $addbutton = new single_button(
     'get',
     single_button::BUTTON_PRIMARY
 );
+$addbutton->class .= ' mt-3';
 echo $OUTPUT->render($addbutton);
 
 echo $OUTPUT->footer();
