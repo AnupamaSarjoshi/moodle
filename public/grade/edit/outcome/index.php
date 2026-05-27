@@ -26,10 +26,15 @@ require_once(__DIR__.'/../../../config.php');
 require_once($CFG->dirroot.'/grade/lib.php');
 require_once($CFG->libdir.'/gradelib.php');
 
-$courseid = optional_param('id', 0, PARAM_INT);
-$action   = optional_param('action', '', PARAM_ALPHA);
+$courseid  = optional_param('id', 0, PARAM_INT);
+$action    = optional_param('action', '', PARAM_ALPHA);
+$returnurl = optional_param('returnurl', '', PARAM_LOCALURL);
 
-$url = new moodle_url('/grade/edit/outcome/index.php', ['id' => $courseid]);
+$urlparams = ['id' => $courseid];
+if ($returnurl !== '') {
+    $urlparams['returnurl'] = $returnurl;
+}
+$url = new moodle_url('/grade/edit/outcome/index.php', $urlparams);
 $PAGE->set_url($url);
 $PAGE->set_pagelayout('admin');
 
@@ -154,7 +159,11 @@ if ($courseid and $outcomes = grade_outcome::fetch_all_local($courseid)) {
 
         $line[] = $outcome->get_item_uses_count();
 
-        $buttons = grade_button('edit', $courseid, $outcome);
+        $editurl = new moodle_url('edit.php', ['courseid' => $courseid, 'id' => $outcome->id]);
+        if ($returnurl !== '') {
+            $editurl->param('returnurl', $returnurl);
+        }
+        $buttons = $OUTPUT->action_icon($editurl, new pix_icon('t/edit', get_string('edit'), '', ['class' => 'iconsmall']));
 
         if ($outcome->can_delete()) {
             $buttons .= grade_button('delete', $courseid, $outcome);
@@ -206,7 +215,11 @@ if ($outcomes = grade_outcome::fetch_all_global()) {
 
         $buttons = "";
         if (has_capability('moodle/grade:manage', context_system::instance())) {
-            $buttons .= grade_button('edit', $courseid, $outcome);
+            $editurl = new moodle_url('edit.php', ['courseid' => $courseid, 'id' => $outcome->id]);
+            if ($returnurl !== '') {
+                $editurl->param('returnurl', $returnurl);
+            }
+            $buttons .= $OUTPUT->action_icon($editurl, new pix_icon('t/edit', get_string('edit'), '', ['class' => 'iconsmall']));
         }
         if (has_capability('moodle/grade:manage', context_system::instance()) and $outcome->can_delete()) {
             $buttons .= grade_button('delete', $courseid, $outcome);
@@ -225,7 +238,7 @@ if ($outcomes = grade_outcome::fetch_all_global()) {
     $outcomes_tables[] = $return;
 }
 
-$actionbar = new \core_grades\output\manage_outcomes_action_bar($context, !empty($outcomes_tables));
+$actionbar = new \core_grades\output\manage_outcomes_action_bar($context, !empty($outcomes_tables), $returnurl);
 print_grade_page_head($courseid ?: SITEID, 'outcome', 'edit', $heading, false, false,
     true, null, null, null, $actionbar);
 

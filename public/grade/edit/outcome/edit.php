@@ -29,6 +29,7 @@ require_once 'edit_form.php';
 
 $courseid = optional_param('courseid', 0, PARAM_INT);
 $id       = optional_param('id', 0, PARAM_INT);
+$returnurl = optional_param('returnurl', '', PARAM_LOCALURL);
 
 $url = new moodle_url('/grade/edit/outcome/edit.php');
 if ($courseid !== 0) {
@@ -36,6 +37,9 @@ if ($courseid !== 0) {
 }
 if ($id !== 0) {
     $url->param('id', $id);
+}
+if ($returnurl !== '') {
+    $url->param('returnurl', $returnurl);
 }
 $PAGE->set_url($url);
 $PAGE->set_pagelayout('admin');
@@ -102,12 +106,14 @@ if (!$courseid) {
 } else {
     navigation_node::override_active_url(new moodle_url('/grade/edit/outcome/course.php', ['id' => $courseid]));
     $PAGE->navbar->add(get_string('manageoutcomes', 'grades'),
-        new moodle_url('/grade/edit/outcome/index.php', ['id' => $courseid]));
+        new moodle_url('/grade/edit/outcome/index.php', ['id' => $courseid, 'returnurl' => $returnurl]));
 }
 
 // default return url
 $gpr = new grade_plugin_return();
-$returnurl = $gpr->get_return_url('index.php?id='.$courseid);
+$defaultreturn = 'index.php?id=' . $courseid
+    . ($returnurl !== '' ? '&returnurl=' . rawurlencode($returnurl) : '');
+$returnurl = $gpr->get_return_url($defaultreturn);
 $editoroptions = array(
     'maxfiles'  => EDITOR_UNLIMITED_FILES,
     'maxbytes'  => $CFG->maxbytes,
@@ -124,7 +130,7 @@ if (!empty($outcome_rec->id)) {
     $outcome_rec = file_prepare_standard_editor($outcome_rec, 'description', $editoroptions, $systemcontext, 'grade', 'outcome', null);
 }
 
-$mform = new edit_outcome_form(null, compact('gpr', 'editoroptions'));
+$mform = new edit_outcome_form($url, compact('gpr', 'editoroptions'));
 
 $mform->set_data($outcome_rec);
 

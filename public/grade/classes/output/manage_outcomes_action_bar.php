@@ -30,15 +30,20 @@ class manage_outcomes_action_bar extends action_bar {
     /** @var bool $hasoutcomes Whether there are existing outcomes. */
     protected $hasoutcomes;
 
+    /** @var string $returnurl Optional URL to use for the back button instead of course.php. */
+    protected $returnurl;
+
     /**
      * The class constructor.
      *
      * @param \context $context The context object.
      * @param bool $hasoutcomes Whether there are existing outcomes.
+     * @param string $returnurl Optional URL for the back button (overrides default course outcomes link).
      */
-    public function __construct(\context $context, bool $hasoutcomes) {
+    public function __construct(\context $context, bool $hasoutcomes, string $returnurl = '') {
         parent::__construct($context);
         $this->hasoutcomes = $hasoutcomes;
+        $this->returnurl = $returnurl;
     }
 
     /**
@@ -62,8 +67,10 @@ class manage_outcomes_action_bar extends action_bar {
         // Display the following buttons only if the user is in course gradebook.
         if ($this->context->contextlevel === CONTEXT_COURSE) {
             $courseid = $this->context->instanceid;
-            // Add a button to the action bar with a link to the 'course outcomes' page.
-            $backlink = new moodle_url('/grade/edit/outcome/course.php', ['id' => $courseid]);
+            // Add a button to the action bar with a link back to the caller (or default course outcomes page).
+            $backlink = $this->returnurl !== ''
+                ? new moodle_url($this->returnurl)
+                : new moodle_url('/grade/edit/outcome/course.php', ['id' => $courseid]);
             $backbutton = new \single_button($backlink, get_string('back'), 'get');
             $data['backbutton'] = $backbutton->export_for_template($output);
 
@@ -76,7 +83,13 @@ class manage_outcomes_action_bar extends action_bar {
         }
 
         // Add a button to the action bar with a link to the 'add new outcome' page.
-        $addoutcomelink = new moodle_url('/grade/edit/outcome/edit.php', ['courseid' => $courseid]);
+        $addoutcomeparams = ['courseid' => $courseid];
+        if ($this->returnurl !== '') {
+            // Thread returnurl through edit.php so Cancel returns to index.php
+            // with the returnurl still intact (not to the default course.php).
+            $addoutcomeparams['returnurl'] = $this->returnurl;
+        }
+        $addoutcomelink = new moodle_url('/grade/edit/outcome/edit.php', $addoutcomeparams);
         $addoutcomebutton = new \single_button($addoutcomelink, get_string('outcomecreate', 'grades'),
             'get', \single_button::BUTTON_PRIMARY);
         $data['addoutcomebutton'] = $addoutcomebutton->export_for_template($output);
