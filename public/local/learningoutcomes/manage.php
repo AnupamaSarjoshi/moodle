@@ -15,11 +15,11 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Course-level learning outcomes management page.
+ * Plugin settings and gateway page for course-level learning outcomes.
  *
- * Lists existing outcomes for the course and allows editing teachers to add,
- * edit, delete, and reorder them.  Also exposes the course-level enabled
- * toggle.
+ * Manages the per-course enabled toggle and nudges towards the alignment
+ * report.  Outcome CRUD (add / edit / delete) is delegated to the standard
+ * grade outcomes page at grade/edit/outcome/index.php.
  *
  * @package   local_learningoutcomes
  * @copyright 2026 Moodle Pty Ltd
@@ -33,9 +33,6 @@ use local_learningoutcomes\manager;
 use local_learningoutcomes\form\course_settings_form;
 
 $courseid  = required_param('courseid', PARAM_INT);
-$action    = optional_param('action', '', PARAM_ALPHA);
-$id        = optional_param('id', 0, PARAM_INT);
-$confirm   = optional_param('confirm', 0, PARAM_BOOL);
 $returnurl = optional_param('returnurl', '', PARAM_LOCALURL);
 
 $course  = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
@@ -55,11 +52,6 @@ if ($returnurl !== '') {
     $manageurlparams['returnurl'] = $returnurl;
 }
 $manageurl    = new moodle_url('/local/learningoutcomes/manage.php', $manageurlparams);
-$editurlparams = ['courseid' => $courseid];
-if ($returnurl !== '') {
-    $editurlparams['returnurl'] = $returnurl;
-}
-$editurl      = new moodle_url('/local/learningoutcomes/edit.php', $editurlparams);
 $alignmenturl = new moodle_url('/local/learningoutcomes/alignment.php', ['courseid' => $courseid]);
 
 $PAGE->set_url($manageurl);
@@ -67,27 +59,6 @@ $PAGE->set_context($context);
 $PAGE->set_pagelayout('incourse');
 $PAGE->set_title(get_string('manageoutcomes', 'local_learningoutcomes'));
 $PAGE->set_heading($course->fullname);
-
-// --- Handle delete action ------------------------------------------------
-
-if ($action === 'delete' && $id > 0) {
-    $outcome = $DB->get_record('grade_outcomes', ['id' => $id, 'courseid' => $courseid], '*', MUST_EXIST);
-
-    if ($confirm) {
-        require_sesskey();
-        manager::delete_outcome($id, $courseid);
-        redirect($manageurl, get_string('outcomedeleted', 'local_learningoutcomes'), null, \core\output\notification::NOTIFY_SUCCESS);
-    }
-
-    echo $OUTPUT->header();
-    echo $OUTPUT->confirm(
-        get_string('deleteoutcomeconfirm', 'local_learningoutcomes', $outcome->fullname),
-        new moodle_url($manageurl, ['action' => 'delete', 'id' => $id, 'confirm' => 1, 'sesskey' => sesskey()]),
-        $manageurl
-    );
-    echo $OUTPUT->footer();
-    exit;
-}
 
 // --- Handle course settings form ----------------------------------------
 
@@ -127,10 +98,12 @@ echo html_writer::div(
 
 $settingsform->display();
 
-// --- Outcomes list ---------------------------------------------------
+// --- Outcomes --------------------------------------------------------
 
-$outcomes = manager::get_course_outcomes($courseid);
-$mincount = (int) get_config('local_learningoutcomes', 'mincount') ?: 3;
+$outcomecount  = count(manager::get_course_outcomes($courseid));
+$mincount      = (int) get_config('local_learningoutcomes', 'mincount') ?: 3;
+$gradeindexurl = new moodle_url('/grade/edit/outcome/index.php', ['id' => $courseid, 'returnurl' => $manageurl->out_as_local_url(false)]);
+$gradeaddurl   = new moodle_url('/grade/edit/outcome/edit.php', ['courseid' => $courseid]);
 
 echo $OUTPUT->heading(get_string('courseoutcomes', 'local_learningoutcomes'), 3);
 
@@ -140,11 +113,11 @@ echo html_writer::div(
     'mb-3'
 );
 
-// Nudge: fewer outcomes than the minimum.
-if (count($outcomes) < $mincount) {
+// Nudge: fewer course-scoped outcomes than the recommended minimum.
+if ($outcomecount < $mincount) {
     $nudgedata = (object) [
         'min' => $mincount,
-        'url' => $editurl->out(false),
+        'url' => $gradeaddurl->out(false),
     ];
     echo $OUTPUT->notification(
         get_string('nudge:incomplete', 'local_learningoutcomes', $nudgedata),
@@ -153,48 +126,10 @@ if (count($outcomes) < $mincount) {
     );
 }
 
-if (empty($outcomes)) {
-    echo $OUTPUT->notification(get_string('nooutcomes', 'local_learningoutcomes'), \core\output\notification::NOTIFY_INFO, false);
-} else {
-    $table = new html_table();
-    $table->id = 'learning-outcomes-table';
-    $table->attributes['class'] = 'generaltable fullwidth';
-    $table->head = [
-        get_string('outcomeshortname', 'local_learningoutcomes'),
-        get_string('outcomefullname', 'local_learningoutcomes'),
-        get_string('actions'),
-    ];
-
-    foreach ($outcomes as $outcome) {
-        $outcomeEditUrl = new moodle_url($editurl, ['id' => $outcome->id]);
-        $editlink   = html_writer::link(
-            $outcomeEditUrl,
-            get_string('edit')
-        );
-        $deletelink = html_writer::link(
-            new moodle_url($manageurl, ['action' => 'delete', 'id' => $outcome->id]),
-            get_string('delete'),
-            ['class' => 'text-danger']
-        );
-
-        $table->data[] = [
-            format_string($outcome->shortname),
-            format_string($outcome->fullname),
-            $editlink . ' | ' . $deletelink,
-        ];
-    }
-
-    echo html_writer::table($table);
-}
-
-// Add outcome button.
-$addbutton = new single_button(
-    new moodle_url('/local/learningoutcomes/edit.php', ['courseid' => $courseid]),
-    get_string('addoutcome', 'local_learningoutcomes'),
-    'get',
-    single_button::BUTTON_PRIMARY
+// Button linking to the core grade outcomes management page.
+echo html_writer::div(
+    html_writer::link($gradeindexurl, get_string('manageoutcomes', 'grades'), ['class' => 'btn btn-primary']),
+    'mt-2'
 );
-$addbutton->class .= ' mt-3';
-echo $OUTPUT->render($addbutton);
 
 echo $OUTPUT->footer();
