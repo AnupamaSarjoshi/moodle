@@ -99,9 +99,6 @@ class course_outcomes implements renderable, templatable {
         }
 
         $manageParams = ['courseid' => $this->courseid];
-        if ($this->returnurl !== null) {
-            $manageParams['returnurl'] = $this->returnurl->out(false);
-        }
         $data->manageurl = (new \moodle_url(
             '/local/learningoutcomes/manage.php',
             $manageParams

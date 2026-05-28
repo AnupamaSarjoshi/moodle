@@ -47,8 +47,7 @@ function local_learningoutcomes_extend_navigation_course(
 
     if (has_capability('local/learningoutcomes:manage', $context)) {
         $url = new moodle_url('/local/learningoutcomes/manage.php', [
-            'courseid'  => $course->id,
-            'returnurl' => $PAGE->url->out(false),
+            'courseid' => $course->id,
         ]);
         $navigation->add(
             get_string('manageoutcomes', 'local_learningoutcomes'),

@@ -84,16 +84,6 @@ $PAGE->navbar->add(get_string('manageoutcomes', 'local_learningoutcomes'), $mana
 
 echo $OUTPUT->heading(get_string('manageoutcomes', 'local_learningoutcomes'), 2);
 
-if ($returnurl !== '') {
-    $backurl = new moodle_url($returnurl);
-} else {
-    $backurl = get_local_referer(false) ?: new moodle_url('/local/learningoutcomes/view.php', ['courseid' => $courseid]);
-}
-echo html_writer::div(
-    html_writer::link($backurl, get_string('back'), ['class' => 'btn btn-secondary mb-3']),
-    'mb-3'
-);
-
 // --- Course settings toggle -----------------------------------------
 
 $settingsform->display();
