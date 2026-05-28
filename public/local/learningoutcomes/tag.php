@@ -27,8 +27,9 @@ require_once(__DIR__ . '/../../config.php');
 use local_learningoutcomes\manager;
 use local_learningoutcomes\form\tag_activity_form;
 
-$courseid = required_param('courseid', PARAM_INT);
-$cmid     = required_param('cmid', PARAM_INT);
+$courseid    = required_param('courseid', PARAM_INT);
+$cmid        = required_param('cmid', PARAM_INT);
+$returnparam = optional_param('returnurl', '', PARAM_LOCALURL);
 
 $course  = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 $cm      = get_coursemodule_from_id(null, $cmid, $courseid, false, MUST_EXIST);
@@ -42,9 +43,15 @@ if (!get_config('local_learningoutcomes', 'enabled')) {
         new moodle_url('/course/view.php', ['id' => $courseid]));
 }
 
-$manageurl = new moodle_url('/local/learningoutcomes/manage.php', ['courseid' => $courseid]);
-$tagurl    = new moodle_url('/local/learningoutcomes/tag.php', ['courseid' => $courseid, 'cmid' => $cmid]);
-$returnurl = new moodle_url('/course/view.php', ['id' => $courseid]);
+$manageurl    = new moodle_url('/local/learningoutcomes/manage.php', ['courseid' => $courseid]);
+$tagurlparams = ['courseid' => $courseid, 'cmid' => $cmid];
+if ($returnparam !== '') {
+    $tagurlparams['returnurl'] = $returnparam;
+}
+$tagurl    = new moodle_url('/local/learningoutcomes/tag.php', $tagurlparams);
+$returnurl = $returnparam !== ''
+    ? new moodle_url($returnparam)
+    : new moodle_url('/local/learningoutcomes/alignment.php', ['courseid' => $courseid]);
 
 $PAGE->set_url($tagurl);
 $PAGE->set_context($context);

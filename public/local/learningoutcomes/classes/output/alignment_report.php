@@ -138,7 +138,14 @@ class alignment_report implements renderable, templatable {
                     'name'   => format_string($cm->name),
                     'tagurl' => (new \moodle_url(
                         '/local/learningoutcomes/tag.php',
-                        ['courseid' => $this->courseid, 'cmid' => $cm->id]
+                        [
+                            'courseid'  => $this->courseid,
+                            'cmid'      => $cm->id,
+                            'returnurl' => (new \moodle_url(
+                                '/local/learningoutcomes/alignment.php',
+                                ['courseid' => $this->courseid]
+                            ))->out_as_local_url(false),
+                        ]
                     ))->out(false),
                 ];
             }
