@@ -106,6 +106,7 @@ $string['addoutcomeslink'] = 'Add learning outcomes';
 $string['reportheading'] = 'Alignment report';
 $string['outcomerow'] = 'Learning outcome';
 $string['activityrow'] = 'Activity';
+$string['siteoutcome'] = 'Site-wide';
 
 // Nudge / incomplete course notices.
 $string['nudge:incomplete'] = 'This course has fewer than the recommended {$a->min} learning outcomes. <a href="{$a->url}">Add learning outcomes</a> to help students understand what they will achieve.';

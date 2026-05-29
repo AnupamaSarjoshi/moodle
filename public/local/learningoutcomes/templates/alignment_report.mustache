@@ -79,6 +79,9 @@
                 <tr class="{{^hasactivities}}table-danger{{/hasactivities}}">
                     <td>
                         <span class="fw-semibold">{{shortname}}</span>
+                        {{#siteoutcome}}
+                        <span class="badge bg-info ms-1 small">{{#str}} siteoutcome, local_learningoutcomes {{/str}}</span>
+                        {{/siteoutcome}}
                         <br>
                         <span class="text-muted small">{{fullname}}</span>
                     </td>

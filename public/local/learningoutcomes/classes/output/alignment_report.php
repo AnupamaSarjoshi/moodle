@@ -63,7 +63,7 @@ class alignment_report implements renderable, templatable {
         $data = new stdClass();
         $data->courseid = $this->courseid;
 
-        $outcomes = manager::get_course_outcomes($this->courseid);
+        $outcomes = manager::get_available_outcomes($this->courseid);
         $data->hasoutcomes = !empty($outcomes);
 
         if (!$data->hasoutcomes) {
@@ -118,6 +118,7 @@ class alignment_report implements renderable, templatable {
                 'activities'   => $activities,
                 'activitycount' => count($activities),
                 'tagurl'       => null, // Tagging is done per-activity via tag.php.
+                'siteoutcome'  => empty($outcome->courseid), // True for site-wide outcomes.
             ];
         }
 
