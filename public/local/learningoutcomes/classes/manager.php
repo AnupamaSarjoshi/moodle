@@ -333,39 +333,55 @@ class manager {
         ]) ?: [];
 
         // Build a map of outcomeid => grade_item for existing outcome items.
+        // Outcome grade items must use itemnumber >= 1000 (Moodle convention;
+        // see component_gradeitems::get_itemname_from_itemnumber).
+        // Any items with itemnumber in [1, 999] and no outcomeid are leftovers
+        // from an earlier buggy version of this code; collect them for deletion.
         $existingbyoutcome = [];
-        $maxitemnumber     = 0;
+        $maxitemnumber     = 999; // First new outcome item gets 1000.
+        $staleitems        = [];
         foreach ($allitems as $item) {
-            $maxitemnumber = max($maxitemnumber, (int) $item->itemnumber);
+            $itemnumber = (int) $item->itemnumber;
             if (!empty($item->outcomeid)) {
+                // Correctly formed outcome grade item — track it.
                 $existingbyoutcome[(int) $item->outcomeid] = $item;
+                $maxitemnumber = max($maxitemnumber, $itemnumber);
+            } elseif ($itemnumber >= 1 && $itemnumber <= 999) {
+                // Malformed item (no outcomeid, wrong itemnumber range) created
+                // by a previous version of this plugin — mark for deletion.
+                $staleitems[] = $item;
             }
+            // itemnumber = 0 is the main activity grade item; leave it alone.
+        }
+
+        // Remove any stale items before creating correct replacements.
+        foreach ($staleitems as $item) {
+            $item->delete('local_learningoutcomes');
         }
 
         $wantedids = array_map('intval', array_keys($scaledoutcomes));
 
         // Create a grade_item for each scaled outcome that doesn't have one yet.
+        // Use grade_item directly (not grade_update) because grade_update does
+        // not support setting outcomeid — it is not in its $allowed list.
         foreach ($scaledoutcomes as $outcome) {
             $outcomeid = (int) $outcome->id;
             if (isset($existingbyoutcome[$outcomeid])) {
                 continue; // already exists
             }
             $maxitemnumber++;
-            grade_update(
-                'local_learningoutcomes',
-                $courseid,
-                'mod',
-                $modulename,
-                $iteminstance,
-                $maxitemnumber,
-                null,
-                [
-                    'gradetype' => GRADE_TYPE_SCALE,
-                    'scaleid'   => (int) $outcome->scaleid,
-                    'outcomeid' => $outcomeid,
-                    'itemname'  => $outcome->fullname,
-                ]
-            );
+            $gradeitem = new grade_item([
+                'courseid'     => $courseid,
+                'itemtype'     => 'mod',
+                'itemmodule'   => $modulename,
+                'iteminstance' => $iteminstance,
+                'itemnumber'   => $maxitemnumber,
+                'gradetype'    => GRADE_TYPE_SCALE,
+                'scaleid'      => (int) $outcome->scaleid,
+                'outcomeid'    => $outcomeid,
+                'itemname'     => $outcome->fullname,
+            ]);
+            $gradeitem->insert('local_learningoutcomes');
         }
 
         // Delete grade_items for outcomes that were deselected or lost their scale.

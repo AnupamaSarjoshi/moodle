@@ -159,5 +159,60 @@ function xmldb_local_learningoutcomes_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026052102, 'local', 'learningoutcomes');
     }
 
+    // -------------------------------------------------------------------------
+    // 2026052103 – Remove malformed grade_items created by an earlier version
+    //              of sync_outcome_grade_items.
+    //
+    // The earlier code called grade_update() which silently ignores the
+    // 'outcomeid' key (not in its $allowed list).  This produced grade_items
+    // with itemnumber in [1, 999] and outcomeid = NULL for activities that have
+    // rows in local_lo_activity_outcome.  Those items triggered the exception
+    // "Unknown itemnumber mapping for N in mod_X" whenever the activity
+    // settings page was loaded (get_moduleinfo_data iterates all grade_items
+    // and calls component_gradeitems::get_field_name_for_itemnumber for every
+    // itemnumber that has no outcomeid).
+    //
+    // Safe to delete: activity modules that legitimately carry multiple grade
+    // items use itemnumber = 0 (main) plus values >= 1000 (standard Moodle
+    // convention for outcomes).  Items in [1, 999] with no outcomeid that
+    // belong to an activity instance managed by this plugin are definitively
+    // artefacts of the bug.
+    // -------------------------------------------------------------------------
+    if ($oldversion < 2026052103) {
+
+        // Find activity instances (itemtype='mod') that have at least one row
+        // in local_lo_activity_outcome — these were managed by this plugin.
+        $managed = $DB->get_records_sql(
+            "SELECT DISTINCT gi.itemmodule, gi.iteminstance, gi.courseid
+               FROM {grade_items} gi
+               JOIN {course_modules} cm ON cm.instance = gi.iteminstance
+                                       AND cm.course   = gi.courseid
+               JOIN {local_lo_activity_outcome} lo ON lo.cmid = cm.id
+                                                   AND lo.courseid = gi.courseid
+              WHERE gi.itemtype   = 'mod'
+                AND gi.itemnumber BETWEEN 1 AND 999
+                AND gi.outcomeid  IS NULL"
+        );
+
+        foreach ($managed as $row) {
+            $DB->delete_records_select(
+                'grade_items',
+                "itemtype = 'mod'
+                 AND itemmodule   = :module
+                 AND iteminstance = :instance
+                 AND courseid     = :courseid
+                 AND itemnumber BETWEEN 1 AND 999
+                 AND outcomeid IS NULL",
+                [
+                    'module'   => $row->itemmodule,
+                    'instance' => (int) $row->iteminstance,
+                    'courseid' => (int) $row->courseid,
+                ]
+            );
+        }
+
+        upgrade_plugin_savepoint(true, 2026052103, 'local', 'learningoutcomes');
+    }
+
     return true;
 }
