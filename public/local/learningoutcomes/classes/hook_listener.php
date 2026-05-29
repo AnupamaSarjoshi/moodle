@@ -127,7 +127,10 @@ class hook_listener {
         $pagetype = $PAGE->pagetype;
 
         // --- Course main page ------------------------------------------------
-        if (strpos($pagetype, 'course-view') === 0) {
+        // Exclude sub-pages that reuse the 'course-view-*' pagetype prefix but
+        // are not the actual course content view (e.g. course-view-participants
+        // is set by user/index.php).
+        if (strpos($pagetype, 'course-view') === 0 && $pagetype !== 'course-view-participants') {
             $courseid = $COURSE->id ?? 0;
             if ($courseid < 2) {
                 return;
