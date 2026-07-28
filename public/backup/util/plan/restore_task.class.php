@@ -96,19 +96,11 @@ abstract class restore_task extends base_task {
     }
 
     /**
-     * Returns the overwrite structure flag
-     * @return bool
+     * Returns fields that we want to skip importing.
+     * @return array|null
      */
-    public function get_importstructure() {
-        return $this->plan->get_importstructure();
-    }
-
-    /**
-     * Returns fields that we want to skip importing
-     * @return array
-     */
-    public function get_skipimportfields() {
-        return $this->plan->get_skipimportfields();
+    public function get_skiptemplatefields(): ?array {
+        return $this->plan->get_skiptemplatefields();
     }
 
     /**

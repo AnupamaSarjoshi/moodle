@@ -53,11 +53,8 @@ class restore_controller extends base_controller {
     /** @var restore_plan */
     protected $plan;   // Restore execution plan
 
-    /** @var bool set to true once we want to import course structure from the templatecourse */
-    protected $importstructure = false;
-
-    /** @var array skip import fields. Used to skip importing fields defined in csv when importstructure is true */
-    protected $skipimportfields = [];
+    /** @var array|null Fields provided in the CSV that should not be overwritten from the template course. */
+    protected $skiptemplatefields = null;
 
     /**
      * Immediate/delayed execution type.
@@ -94,8 +91,7 @@ class restore_controller extends base_controller {
      * @param \core\progress\base $progress Optional progress monitor
      * @param \stdClass $copydata Course copy data, required when in MODE_COPY
      * @param bool $releasesession Should release the session? backup::RELEASESESSION_YES or backup::RELEASESESSION_NO
-     * @param bool $importstructure Should import course structure?
-     * @param array $skipimportfields Skip fields when importing the course structure.
+     * @param ?array $skiptemplatefields Course fields to exclude when restoring from a template course.
      */
     public function __construct(
         $tempdir,
@@ -107,8 +103,7 @@ class restore_controller extends base_controller {
         ?\core\progress\base $progress = null,
         $releasesession = backup::RELEASESESSION_NO,
         ?\stdClass $copydata = null,
-        $importstructure = false,
-        $skipimportfields = null
+        $skiptemplatefields = null
     ) {
 
         if ($mode == backup::MODE_COPY && is_null($copydata)) {
@@ -132,8 +127,7 @@ class restore_controller extends base_controller {
         $this->samesite = false;
         $this->checksum = '';
         $this->precheck = null;
-        $this->importstructure = $importstructure;
-        $this->skipimportfields = $skipimportfields;
+        $this->skiptemplatefields = $skiptemplatefields;
 
         // Apply current backup version and release if necessary
         backup_controller_dbops::apply_version_and_release();
@@ -363,19 +357,11 @@ class restore_controller extends base_controller {
     }
 
     /**
-     * Returns the import structure flag
-     * @return bool
-     */
-    public function get_importstructure() {
-        return $this->importstructure;
-    }
-
-    /**
      * Returns fields that we want to skip importing
-     * @return array
+     * @return array|null
      */
-    public function get_skipimportfields() {
-        return $this->skipimportfields;
+    public function get_skiptemplatefields(): ?array {
+        return $this->skiptemplatefields;
     }
 
     /**

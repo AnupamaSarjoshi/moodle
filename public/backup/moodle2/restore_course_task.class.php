@@ -66,24 +66,19 @@ class restore_course_task extends restore_task {
         // Define the task contextid (the course one)
         $this->contextid = context_course::instance($this->get_courseid())->id;
 
-        // Executed conditionally if restoring to new course or if overwrite_conf setting is enabled
-        $importstructure = false;
-        $skipimportfields = null;
-        if (!is_null($this->plan) && ($this->plan instanceof restore_plan)) {
-            $importstructure = $this->plan->get_importstructure();
-            $skipimportfields = $this->plan->get_skipimportfields();
-        }
+        // Fields that should be excluded when restoring the template.
+        $skiptemplatefields = $this->get_skiptemplatefields();
+
         if (
             $this->get_target() == backup::TARGET_NEW_COURSE ||
             $this->get_setting_value('overwrite_conf') == true ||
-            $importstructure == true
+            !is_null($skiptemplatefields)
         ) {
             $this->add_step(new restore_course_structure_step(
                 'course_info',
                 'course.xml',
                 null,
-                $importstructure,
-                $skipimportfields
+                $skiptemplatefields
             ));
 
             // Search reindexing (if enabled).

@@ -100,16 +100,13 @@ class tool_uploadcourse_course {
     /** @var int update mode. Matches tool_uploadcourse_processor::UPDATE_* */
     protected $updatemode;
 
-    /** @var array skip import fields. Used to skip importing fields defined in csv when importstructure is true */
-    protected $skipimportfields = [];
-
-    /** @var bool set to true once we want to import course structure from the templatecourse */
-    protected $importstructure = false;
+    /** @var array Fields provided in the CSV that should not be overwritten from the template course. */
+    protected $skiptemplatefields = [];
 
     /** @var array fields allowed as course data. */
     static protected $validfields = array('fullname', 'shortname', 'idnumber', 'category', 'visible', 'startdate', 'enddate',
         'summary', 'format', 'theme', 'lang', 'newsitems', 'showgrades', 'showreports', 'legacyfiles', 'maxbytes',
-        'groupmode', 'groupmodeforce', 'enablecompletion', 'downloadcontent', 'showactivitydates', 'importstructure');
+        'groupmode', 'groupmodeforce', 'enablecompletion', 'downloadcontent', 'showactivitydates');
 
     /** @var array fields required on course creation. */
     static protected $mandatoryfields = array('fullname', 'category');
@@ -492,7 +489,8 @@ class tool_uploadcourse_course {
             if (!in_array($field, self::$validfields)) {
                 continue;
             }
-            $this->skipimportfields[] = $field;
+            // Track fields provided in the CSV so they are not overwritten by template course values.
+            $this->skiptemplatefields[] = $field;
             if ($field == 'shortname') {
                 // Let's leave it apart from now, use $this->shortname only.
                 continue;
@@ -825,10 +823,6 @@ class tool_uploadcourse_course {
             }
         }
 
-        if (isset($coursedata['importstructure']) && $coursedata['importstructure']) {
-            $this->importstructure = true;
-        }
-
         // Saving data.
         $this->data = $coursedata;
 
@@ -933,8 +927,7 @@ class tool_uploadcourse_course {
                 null,
                 null,
                 null,
-                $this->importstructure,
-                $this->skipimportfields
+                $this->skiptemplatefields
             );
 
             // Check if the format conversion must happen first.

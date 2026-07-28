@@ -95,21 +95,12 @@ class restore_plan extends base_plan implements loggable {
         return $this->controller->get_logger();
     }
 
-
-    /**
-     * Returns the import structure flag
-     * @return bool
-     */
-    public function get_importstructure() {
-        return $this->controller->get_importstructure();
-    }
-
     /**
      * Returns fields that we want to skip importing
-     * @return array
+     * @return array|null
      */
-    public function get_skipimportfields() {
-        return $this->controller->get_skipimportfields();
+    public function get_skiptemplatefields(): ?array {
+        return $this->controller->get_skiptemplatefields();
     }
 
     /**
