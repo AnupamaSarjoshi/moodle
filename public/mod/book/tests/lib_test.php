@@ -30,6 +30,7 @@ defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->dirroot . '/mod/book/lib.php');
+require_once($CFG->dirroot . '/mod/book/locallib.php');
 
 /**
  * Unit tests for (some of) mod/book/lib.php.
@@ -249,13 +250,73 @@ final class lib_test extends \advanced_testcase {
         );
 
         // Revisiting the same chapter again should not create a new record.
-        $this->waitForSecond();
+        $this->mock_clock_with_incrementing();
         book_view($book, $chapter, true, $course, $cm, $context);
 
         $this->assertEquals(
             1,
             $DB->count_records('book_chapters_userviews', ['chapterid' => $chapter->id, 'userid' => $USER->id]),
         );
+    }
+
+    /**
+     * Out-of-order requests must never move timeviewed backwards.
+     *
+     * @covers ::book_view
+     */
+    public function test_book_view_timeviewed_is_monotonic(): void {
+        global $DB, $USER;
+
+        $course = $this->getDataGenerator()->create_course();
+        $book = $this->getDataGenerator()->create_module('book', ['course' => $course->id]);
+        $bookgenerator = $this->getDataGenerator()->get_plugin_generator('mod_book');
+        $chapter = $bookgenerator->create_chapter(['bookid' => $book->id]);
+
+        $context = \context_module::instance($book->cmid);
+        $cm = get_coursemodule_from_instance('book', $book->id);
+
+        $basetime = time();
+        $clock = $this->mock_clock_with_frozen($basetime);
+
+        // First request records a newer view.
+        $clock->set_to($basetime + 100);
+        book_view($book, $chapter, true, $course, $cm, $context);
+
+        // A subsequent request has an older timestamp. It must not clobber the newer timeviewed value.
+        $clock->set_to($basetime + 10);
+        book_view($book, $chapter, true, $course, $cm, $context);
+
+        $userview = $DB->get_record('book_chapters_userviews', ['chapterid' => $chapter->id, 'userid' => $USER->id]);
+        $this->assertEquals($basetime + 100, $userview->timeviewed);
+    }
+
+    /**
+     * Revisiting an earlier chapter must update "last viewed", even if that chapter's own previous view was
+     * within the debounce window.
+     *
+     * @covers ::book_view
+     * @covers ::book_get_last_viewed_chapter
+     */
+    public function test_book_view_last_viewed_chapter_updates_on_revisit_within_debounce(): void {
+        $course = $this->getDataGenerator()->create_course();
+        $book = $this->getDataGenerator()->create_module('book', ['course' => $course->id]);
+        $bookgenerator = $this->getDataGenerator()->get_plugin_generator('mod_book');
+        $chaptera = $bookgenerator->create_chapter(['bookid' => $book->id]);
+        $chapterb = $bookgenerator->create_chapter(['bookid' => $book->id]);
+
+        $context = \context_module::instance($book->cmid);
+        $cm = get_coursemodule_from_instance('book', $book->id);
+
+        $clock = $this->mock_clock_with_frozen(time());
+
+        // A -> B -> A, all within the debounce window.
+        book_view($book, $chaptera, false, $course, $cm, $context);
+        $clock->bump(1);
+        book_view($book, $chapterb, false, $course, $cm, $context);
+        $clock->bump(1);
+        book_view($book, $chaptera, false, $course, $cm, $context);
+
+        $this->assertEquals($chaptera->id, book_get_last_viewed_chapter($book->id));
     }
 
     /**
