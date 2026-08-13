@@ -677,50 +677,6 @@ function book_view($book, $chapter, $islastchapter, $course, $cm, $context) {
     if (empty($chapter)) {
         \mod_book\event\course_module_viewed::create_from_book($book, $context)->trigger();
     } else {
-        if (!isguestuser()) {
-            $now = \core\di::get(\core\clock::class)->time();
-
-            // Only debounce repeated views of the same chapter. A navigation from another chapter should always
-            // update the view so "last viewed chapter" reflects the user's navigation history (e.g. A -> B -> A).
-            $lastviewedbychapterid = $SESSION->mod_book_lastviewedchapterid ?? [];
-            $samechapterasbefore = ($lastviewedbychapterid[$book->id] ?? null) == $chapter->id;
-            $lastviewedbychapterid[$book->id] = $chapter->id;
-            $SESSION->mod_book_lastviewedchapterid = $lastviewedbychapterid;
-
-            $threshold = $samechapterasbefore ? ($now - \mod_book\helper::CHAPTER_VIEW_DEBOUNCE_SECONDS) : $now;
-
-            $existing = $DB->get_record('book_chapters_userviews', [
-                'chapterid' => $chapter->id,
-                'userid'    => $USER->id,
-            ]);
-            if ($existing) {
-                // Only update if the stored timeviewed is at or before the threshold, preventing it from moving backwards.
-                $DB->execute(
-                    "UPDATE {book_chapters_userviews}
-                        SET timeviewed = :now
-                      WHERE id = :id AND timeviewed <= :threshold",
-                    ['now' => $now, 'id' => $existing->id, 'threshold' => $threshold]
-                );
-            } else {
-                $userview = new \stdClass();
-                $userview->chapterid   = $chapter->id;
-                $userview->userid      = $USER->id;
-                $userview->timecreated = $now;
-                $userview->timeviewed  = $now;
-                try {
-                    $DB->insert_record('book_chapters_userviews', $userview);
-                } catch (\dml_write_exception $e) {
-                    // A concurrent request already inserted this chapter view,
-                    // so update the last viewed time instead of failing the page load.
-                    $DB->execute(
-                        "UPDATE {book_chapters_userviews}
-                            SET timeviewed = :now
-                          WHERE chapterid = :chapterid AND userid = :userid AND timeviewed <= :threshold",
-                        ['now' => $now, 'chapterid' => $chapter->id, 'userid' => $USER->id, 'threshold' => $threshold]
-                    );
-                }
-            }
-        }
         \mod_book\event\chapter_viewed::create_from_chapter($book, $context, $chapter)->trigger();
 
         $completion = new completion_info($course);

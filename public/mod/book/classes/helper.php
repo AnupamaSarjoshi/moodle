@@ -77,6 +77,53 @@ class helper {
     }
 
     /**
+     * Updates the time a user last viewed a chapter.
+     *
+     * Called from JavaScript after the chapter view debounce period has elapsed. Creates the user view
+     * record if it does not already exist.
+     *
+     * @param int $chapterid
+     * @param int $userid
+     */
+    public static function update_chapter_view_time(int $chapterid, int $userid): void {
+        global $DB;
+
+        $now = \core\di::get(\core\clock::class)->time();
+
+        $existing = $DB->get_record('book_chapters_userviews', [
+            'chapterid' => $chapterid,
+            'userid' => $userid,
+        ]);
+
+        if ($existing) {
+            $DB->execute(
+                "UPDATE {book_chapters_userviews}
+                    SET timeviewed = :now
+                  WHERE chapterid = :chapterid
+                        AND userid = :userid
+                        AND timeviewed < :existing",
+                [
+                    'now' => $now,
+                    'chapterid' => $chapterid,
+                    'userid' => $userid,
+                    'existing' => $now
+                ]
+            );
+        } else {
+            $userview = new \stdClass();
+            $userview->chapterid   = $chapterid;
+            $userview->userid      = $userid;
+            $userview->timecreated = $now;
+            $userview->timeviewed  = $now;
+            try {
+                $DB->insert_record('book_chapters_userviews', $userview);
+            } catch (\dml_write_exception $e) {
+                // A concurrent request already inserted this chapter view, so the required row now exists.
+            }
+        }
+    }
+
+    /**
      * Returns the user progress in a book based on their userviews.
      *
      * @param int $bookid

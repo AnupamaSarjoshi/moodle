@@ -634,7 +634,7 @@ function book_get_last_viewed_chapter(int $bookid): ?int {
               FROM {book_chapters_userviews} uv
               JOIN {book_chapters} bc ON bc.id = uv.chapterid
              WHERE bc.bookid = :bookid AND uv.userid = :userid AND bc.hidden = 0
-          ORDER BY uv.timeviewed DESC, uv.id DESC";
+          ORDER BY uv.timeviewed DESC";
 
     $parameters = [
         'bookid' => $bookid,

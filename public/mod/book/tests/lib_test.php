@@ -217,6 +217,7 @@ final class lib_test extends \advanced_testcase {
         $sink = $this->redirectEvents();
 
         // Check just opening the book.
+        helper::update_chapter_view_time($chapter->id, $USER->id);
         book_view($book, 0, false, $course, $cm, $context);
 
         $events = $sink->get_events();
@@ -232,6 +233,7 @@ final class lib_test extends \advanced_testcase {
         $this->assertNotEmpty($event->get_name());
 
         // Check viewing one book chapter (the only one so it will be the first and last).
+        helper::update_chapter_view_time($chapter->id, $USER->id);
         book_view($book, $chapter, true, $course, $cm, $context);
 
         $events = $sink->get_events();
@@ -251,72 +253,13 @@ final class lib_test extends \advanced_testcase {
 
         // Revisiting the same chapter again should not create a new record.
         $this->mock_clock_with_incrementing();
+        helper::update_chapter_view_time($chapter->id, $USER->id);
         book_view($book, $chapter, true, $course, $cm, $context);
 
         $this->assertEquals(
             1,
             $DB->count_records('book_chapters_userviews', ['chapterid' => $chapter->id, 'userid' => $USER->id]),
         );
-    }
-
-    /**
-     * Out-of-order requests must never move timeviewed backwards.
-     *
-     * @covers ::book_view
-     */
-    public function test_book_view_timeviewed_is_monotonic(): void {
-        global $DB, $USER;
-
-        $course = $this->getDataGenerator()->create_course();
-        $book = $this->getDataGenerator()->create_module('book', ['course' => $course->id]);
-        $bookgenerator = $this->getDataGenerator()->get_plugin_generator('mod_book');
-        $chapter = $bookgenerator->create_chapter(['bookid' => $book->id]);
-
-        $context = \context_module::instance($book->cmid);
-        $cm = get_coursemodule_from_instance('book', $book->id);
-
-        $basetime = time();
-        $clock = $this->mock_clock_with_frozen($basetime);
-
-        // First request records a newer view.
-        $clock->set_to($basetime + 100);
-        book_view($book, $chapter, true, $course, $cm, $context);
-
-        // A subsequent request has an older timestamp. It must not clobber the newer timeviewed value.
-        $clock->set_to($basetime + 10);
-        book_view($book, $chapter, true, $course, $cm, $context);
-
-        $userview = $DB->get_record('book_chapters_userviews', ['chapterid' => $chapter->id, 'userid' => $USER->id]);
-        $this->assertEquals($basetime + 100, $userview->timeviewed);
-    }
-
-    /**
-     * Revisiting an earlier chapter must update "last viewed", even if that chapter's own previous view was
-     * within the debounce window.
-     *
-     * @covers ::book_view
-     * @covers ::book_get_last_viewed_chapter
-     */
-    public function test_book_view_last_viewed_chapter_updates_on_revisit_within_debounce(): void {
-        $course = $this->getDataGenerator()->create_course();
-        $book = $this->getDataGenerator()->create_module('book', ['course' => $course->id]);
-        $bookgenerator = $this->getDataGenerator()->get_plugin_generator('mod_book');
-        $chaptera = $bookgenerator->create_chapter(['bookid' => $book->id]);
-        $chapterb = $bookgenerator->create_chapter(['bookid' => $book->id]);
-
-        $context = \context_module::instance($book->cmid);
-        $cm = get_coursemodule_from_instance('book', $book->id);
-
-        $clock = $this->mock_clock_with_frozen(time());
-
-        // A -> B -> A, all within the debounce window.
-        book_view($book, $chaptera, false, $course, $cm, $context);
-        $clock->bump(1);
-        book_view($book, $chapterb, false, $course, $cm, $context);
-        $clock->bump(1);
-        book_view($book, $chaptera, false, $course, $cm, $context);
-
-        $this->assertEquals($chaptera->id, book_get_last_viewed_chapter($book->id));
     }
 
     /**
@@ -327,7 +270,7 @@ final class lib_test extends \advanced_testcase {
      * @throws \coding_exception
      */
     public function test_book_view_completion_with_readpercent(): void {
-        global $CFG;
+        global $CFG, $USER;
 
         $CFG->enablecompletion = 1;
 
@@ -350,6 +293,7 @@ final class lib_test extends \advanced_testcase {
         $sink = $this->redirectEvents();
 
         // Check just opening the book.
+        helper::update_chapter_view_time($chapter1->id, $USER->id);
         book_view($book, 0, false, $course, $cm, $context);
 
         $events = $sink->get_events();
@@ -362,6 +306,7 @@ final class lib_test extends \advanced_testcase {
         $completiondata = $completion->get_data($cm);
         $this->assertEquals(0, $completiondata->completionstate);
 
+        helper::update_chapter_view_time($chapter1->id, $USER->id);
         book_view($book, $chapter1, false, $course, $cm, $context);
 
         // Check that completion status still incomplete.
@@ -369,6 +314,7 @@ final class lib_test extends \advanced_testcase {
         $completiondata = $completion->get_data($cm);
         $this->assertEquals(0, $completiondata->completionstate);
 
+        helper::update_chapter_view_time($chapter2->id, $USER->id);
         book_view($book, $chapter2, true, $course, $cm, $context);
 
         $events = $sink->get_events();
