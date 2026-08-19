@@ -82,6 +82,14 @@ class restore_drop_and_clean_temp_stuff extends restore_execution_step {
 class restore_gradebook_structure_step extends restore_structure_step {
 
     /**
+     * The first Moodle version on this branch containing the MDL-88407 fix.
+     *
+     * As the fix did not include a version bump on any branch, this is the exact weekly version the
+     * fix first shipped in.
+     */
+    const PENALTY_CALCULATION_BUG_VERSION = 2025100605.04;
+
+    /**
      * To conditionally decide if this step must be executed
      * Note the "settings" conditions are evaluated in the
      * corresponding task. Here we check for other conditions
@@ -525,6 +533,17 @@ class restore_gradebook_structure_step extends restore_structure_step {
                 && ($restoretask->backup_version_compare(20160518, '<') || $restoretask->backup_release_compare('2.9', '<='))) {
             require_once($CFG->libdir . '/db/upgradelib.php');
             upgrade_course_letter_boundary($this->get_courseid());
+        }
+        // Penalised grades may have had a grade item's multiplier/offset applied twice between the
+        // introduction of grade penalties (20250318) and the MDL-88407 fix. As the fix did not include
+        // a version bump, 20260808 is used as the conservative cutoff for identifying affected backups.
+        if (
+            !$gradebookcalculationsfreeze
+            && $restoretask->backup_version_compare(20250318, '>=')
+            && $restoretask->get_info()->moodle_version < self::PENALTY_CALCULATION_BUG_VERSION
+        ) {
+            require_once($CFG->libdir . '/db/upgradelib.php');
+            upgrade_penalty_calculation_freeze($this->get_courseid());
         }
 
     }
