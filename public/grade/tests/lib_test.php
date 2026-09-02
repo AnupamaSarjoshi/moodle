@@ -1036,12 +1036,15 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test that accepting the gradebook calculations freeze repairs a legacy penalised rawgrade before
-     * regrading.
+     * regrading, and that every other grade item in the course is also recalculated - not just the ones
+     * the repair was able to identify and fix. Covers four kinds of grade item in the same course:
+     * legacy-corrupted and repairable, unrelated with no deduction, legacy-corrupted but unrepairable,
+     * and already correctly stored in the fixed representation.
      *
      * @covers ::print_natural_aggregation_upgrade_notice
      * @covers \core_grades\penalty_manager::repair_penalised_rawgrade
      */
-    public function test_accept_gradebook_freeze_repairs_penalised_rawgrade(): void {
+    public function test_accept_gradebook_freeze_repairs_and_regrades_all_grade_items(): void {
         global $DB, $USER;
 
         $this->resetAfterTest();
@@ -1049,10 +1052,8 @@ final class lib_test extends \advanced_testcase {
 
         $course = $this->getDataGenerator()->create_course();
         $user = $this->getDataGenerator()->create_user();
+        $grader = $this->getDataGenerator()->create_user();
         $this->getDataGenerator()->enrol_user($user->id, $course->id, 'student');
-        // Use a mod_assign grade item: manual grade items skip raw->final recalculation entirely
-        // (grade_item::regrade_final_grades() treats their finalgrade as authoritative), so a manual
-        // item would not exercise the regrade path this test is verifying.
         $assign = $this->getDataGenerator()->create_module('assign', ['course' => $course->id, 'grade' => 200]);
 
         // Create an Assignment submission and grade so the repair can retrieve the authoritative raw grade
@@ -1073,7 +1074,7 @@ final class lib_test extends \advanced_testcase {
             'userid' => $user->id,
             'timecreated' => $now,
             'timemodified' => $now,
-            'grader' => 2,
+            'grader' => $grader->id,
             'grade' => 50,
             'attemptnumber' => 0,
         ]);
@@ -1106,6 +1107,117 @@ final class lib_test extends \advanced_testcase {
         $grade->finalgrade = 175;
         $grade->update();
 
+        // A second Assignment grade item that the repair does not process because it has no deducted mark.
+        // Its finalgrade is deliberately made stale to verify that the full-course regrade recalculates it
+        // when the freeze is accepted.
+        $otherassign = $this->getDataGenerator()->create_module('assign', ['course' => $course->id, 'grade' => 200]);
+        grade_update(
+            source: 'mod/assign',
+            courseid: $course->id,
+            itemtype: 'mod',
+            itemmodule: 'assign',
+            iteminstance: $otherassign->id,
+            itemnumber: 0,
+            grades: ['userid' => $user->id, 'rawgrade' => 40],
+        );
+        $othergradeitem = grade_item::fetch([
+            'courseid' => $course->id,
+            'itemtype' => 'mod',
+            'itemmodule' => 'assign',
+            'iteminstance' => $otherassign->id,
+            'itemnumber' => 0,
+        ]);
+        $othergrade = $othergradeitem->get_grade($user->id, true);
+        $othergrade->finalgrade = 999;
+        $othergrade->update();
+        // Clear the flag set by grade_item::update_final_grade() above so that the item can only be
+        // recalculated because the freeze acceptance forces a full-course regrade.
+        $DB->set_field('grade_items', 'needsupdate', 0, ['id' => $othergradeitem->id]);
+
+        // A third Assignment grade item whose legacy rawgrade the repair cannot identify: the student
+        // has reopened their submission and it has not been regraded, so there is no current Assignment
+        // grade for the repair to check the stored rawgrade against.
+        $unrepairableassign = $this->getDataGenerator()->create_module('assign', ['course' => $course->id, 'grade' => 200]);
+        $DB->insert_record('assign_submission', (object)[
+            'assignment' => $unrepairableassign->id,
+            'userid' => $user->id,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'status' => ASSIGN_SUBMISSION_STATUS_REOPENED,
+            'groupid' => 0,
+            'attemptnumber' => 1,
+            'latest' => 1,
+        ]);
+        grade_update(
+            source: 'mod/assign',
+            courseid: $course->id,
+            itemtype: 'mod',
+            itemmodule: 'assign',
+            iteminstance: $unrepairableassign->id,
+            itemnumber: 0,
+            itemdetails: ['multfactor' => 2.0, 'plusfactor' => 5.0],
+        );
+        $unrepairablegradeitem = grade_item::fetch([
+            'courseid' => $course->id,
+            'itemtype' => 'mod',
+            'itemmodule' => 'assign',
+            'iteminstance' => $unrepairableassign->id,
+            'itemnumber' => 0,
+        ]);
+        // Simulate a legacy gradebook row that the repair cannot safely restore.
+        // The latest Assignment attempt is ungraded, so there is no authoritative grade to compare against.
+        $unrepairablegrade = $unrepairablegradeitem->get_grade($user->id, true);
+        $unrepairablegrade->rawgrade = 85;
+        $unrepairablegrade->deductedmark = 20;
+        $unrepairablegrade->finalgrade = 175;
+        $unrepairablegrade->update();
+
+        // A correctly stored post-MDL-88407 grade: rawgrade matches Assignment's authoritative grade (30).
+        // The repair should leave it unchanged, and accepting the freeze should retain the correct value:
+        // value: (30 - 15) * 2 + 5 = 35.
+        $verifiedassign = $this->getDataGenerator()->create_module('assign', ['course' => $course->id, 'grade' => 200]);
+        $DB->insert_record('assign_submission', (object)[
+            'assignment' => $verifiedassign->id,
+            'userid' => $user->id,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'status' => ASSIGN_SUBMISSION_STATUS_SUBMITTED,
+            'groupid' => 0,
+            'attemptnumber' => 0,
+            'latest' => 1,
+        ]);
+        $DB->insert_record('assign_grades', (object)[
+            'assignment' => $verifiedassign->id,
+            'userid' => $user->id,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'grader' => $grader->id,
+            'grade' => 30,
+            'attemptnumber' => 0,
+        ]);
+        grade_update(
+            source: 'mod/assign',
+            courseid: $course->id,
+            itemtype: 'mod',
+            itemmodule: 'assign',
+            iteminstance: $verifiedassign->id,
+            itemnumber: 0,
+            grades: ['userid' => $user->id, 'rawgrade' => 30],
+            itemdetails: ['multfactor' => 2.0, 'plusfactor' => 5.0],
+        );
+        $verifiedgradeitem = grade_item::fetch([
+            'courseid' => $course->id,
+            'itemtype' => 'mod',
+            'itemmodule' => 'assign',
+            'iteminstance' => $verifiedassign->id,
+            'itemnumber' => 0,
+        ]);
+        $verifiedgrade = $verifiedgradeitem->get_grade($user->id, true);
+        $verifiedgrade->rawgrade = 30;
+        $verifiedgrade->deductedmark = 15;
+        $verifiedgrade->finalgrade = 35;
+        $verifiedgrade->update();
+
         // Freeze the course, as the upgrade step would have done.
         set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
 
@@ -1127,5 +1239,23 @@ final class lib_test extends \advanced_testcase {
         $this->assertEqualsWithDelta(50.0, (float)$after->rawgrade, 0.001);
         $this->assertEqualsWithDelta(20.0, (float)$after->deductedmark, 0.001);
         $this->assertEqualsWithDelta(65.0, (float)$after->finalgrade, 0.001);
+
+        // The unrelated item's stale finalgrade must also have been recalculated from its rawgrade,
+        // even though the repair step never touched it.
+        $otherafter = $othergradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(40.0, (float)$otherafter->finalgrade, 0.001);
+
+        // The latest Assignment attempt is ungraded, so the repair cannot determine the correct rawgrade.
+        // The existing rawgrade is therefore left unchanged.
+        $unrepairableafter = $unrepairablegradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(85.0, (float)$unrepairableafter->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(135.0, (float)$unrepairableafter->finalgrade, 0.001);
+
+        // The already-correct item must be left exactly as it was: the repair has nothing to fix, and
+        // the forced full-course regrade must recompute the same fixed-formula value, not a different one.
+        $verifiedafter = $verifiedgradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(30.0, (float)$verifiedafter->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(15.0, (float)$verifiedafter->deductedmark, 0.001);
+        $this->assertEqualsWithDelta(35.0, (float)$verifiedafter->finalgrade, 0.001);
     }
 }

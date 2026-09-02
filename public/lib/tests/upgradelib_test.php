@@ -2095,4 +2095,95 @@ calendar,core_calendar|/calendar/view.php?view=month',
         $this->assertTrue(empty($CFG->{'gradebook_calculations_freeze_' . $course3->id}));
         $this->assertEquals(20260808, $CFG->{'gradebook_calculations_freeze_' . $course4->id});
     }
+
+    /**
+     * Create an Assignment grade item with a submitted, graded latest attempt and a penalised grade_grade.
+     *
+     * @param int $courseid The course id.
+     * @param int $userid The graded user id.
+     * @param float $assigngrade The grade stored in assign_grades, used as the authoritative source.
+     * @param float $storedrawgrade The rawgrade to store directly in grade_grades, simulating the legacy state.
+     * @return grade_item The Assignment's grade item.
+     */
+    private function create_penalised_assignment_grade(
+        int $courseid,
+        int $userid,
+        float $assigngrade,
+        float $storedrawgrade,
+    ): grade_item {
+        global $DB;
+
+        $assign = $this->getDataGenerator()->create_module('assign', [
+            'course' => $courseid,
+            'grade' => 200,
+        ]);
+
+        $now = time();
+        $DB->insert_record('assign_submission', (object) [
+            'assignment' => $assign->id,
+            'userid' => $userid,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'status' => 'submitted',
+            'groupid' => 0,
+            'attemptnumber' => 0,
+            'latest' => 1,
+        ]);
+        $grader = $this->getDataGenerator()->create_user();
+        $DB->insert_record('assign_grades', (object) [
+            'assignment' => $assign->id,
+            'userid' => $userid,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'grader' => $grader->id,
+            'grade' => $assigngrade,
+            'attemptnumber' => 0,
+        ]);
+
+        $gradeitem = grade_item::fetch([
+            'courseid' => $courseid,
+            'itemtype' => 'mod',
+            'itemmodule' => 'assign',
+            'iteminstance' => $assign->id,
+            'itemnumber' => 0,
+        ]);
+        $grade = $gradeitem->get_grade($userid, true);
+        $grade->rawgrade = $storedrawgrade;
+        $grade->deductedmark = 20;
+        $grade->finalgrade = $storedrawgrade;
+        $grade->update();
+
+        return $gradeitem;
+    }
+
+    /**
+     * Test that Assignment grades are only frozen when the stored rawgrade differs from the authoritative
+     * Assignment grade, rather than based on deductedmark alone.
+     *
+     * @covers ::upgrade_penalty_calculation_freeze
+     */
+    public function test_upgrade_penalty_calculation_freeze_assignment_precision(): void {
+        global $CFG;
+
+        $this->resetAfterTest();
+
+        require_once($CFG->libdir . '/db/upgradelib.php');
+
+        $user = $this->getDataGenerator()->create_user();
+
+        // Course 1: The stored rawgrade differs from Assignment's authoritative grade, so the course
+        // must be frozen.
+        $course1 = $this->getDataGenerator()->create_course();
+        $this->create_penalised_assignment_grade($course1->id, $user->id, assigngrade: 50, storedrawgrade: 85);
+
+        // Course 2: The stored rawgrade matches Assignment's authoritative grade, so the course must not
+        // be frozen even though deductedmark is set.
+        $course2 = $this->getDataGenerator()->create_course();
+        $this->create_penalised_assignment_grade($course2->id, $user->id, assigngrade: 50, storedrawgrade: 50);
+
+        upgrade_penalty_calculation_freeze();
+
+        $this->assertEquals(20260808, $CFG->{'gradebook_calculations_freeze_' . $course1->id});
+        $this->assertFalse(isset($CFG->{'gradebook_calculations_freeze_' . $course2->id}));
+    }
 }

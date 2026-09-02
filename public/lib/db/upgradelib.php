@@ -273,10 +273,17 @@ function upgrade_calculated_grade_items($courseid = null) {
  *
  * Used during upgrade and course restore to prevent existing grades from being silently changed.
  *
+ * Assignment grades are checked against the authoritative grade for the student's latest attempt,
+ * so a course is only frozen when a penalised grade still has an incorrect rawgrade. Other item types
+ * have no authoritative source to compare against, so any penalised grade conservatively freezes the
+ * course.
+ *
  * @param int|null $courseid Specify a course ID to run this script on just one course.
  */
 function upgrade_penalty_calculation_freeze(?int $courseid = null) {
-    global $DB;
+    global $CFG, $DB;
+
+    require_once($CFG->libdir . '/gradelib.php');
 
     $params = [];
     $singlecoursesql = '';
@@ -285,19 +292,51 @@ function upgrade_penalty_calculation_freeze(?int $courseid = null) {
         $params['courseid'] = $courseid;
     }
 
-    // Find courses containing grade items that may be affected by the bug.
+    // Find courses containing a non-Assignment grade item that may be affected by the bug.
     $sql = "SELECT DISTINCT gi.courseid
               FROM {grade_items} gi
               JOIN {grade_grades} gg ON gg.itemid = gi.id
              WHERE gg.deductedmark > 0
+               AND (gi.itemtype <> 'mod' OR gi.itemmodule <> 'assign')
                $singlecoursesql";
-    $affectedcourseids = $DB->get_fieldset_sql($sql, $params);
+    $affectedcourseids = array_fill_keys($DB->get_fieldset_sql($sql, $params), true);
 
-    foreach ($affectedcourseids as $affectedcourseid) {
+    // Find penalised Assignment grades and compare their stored rawgrade with the authoritative
+    // grade for the student's latest attempt.
+    $sql = "SELECT gg.id, gg.rawgrade, ag.grade AS authoritativegrade, gi.courseid
+              FROM {grade_items} gi
+              JOIN {grade_grades} gg ON gg.itemid = gi.id
+              JOIN {assign_submission} asub
+                ON asub.assignment = gi.iteminstance
+               AND asub.userid = gg.userid
+               AND asub.latest = 1
+              JOIN {assign_grades} ag
+                ON ag.assignment = asub.assignment
+               AND ag.userid = asub.userid
+               AND ag.attemptnumber = asub.attemptnumber
+             WHERE gg.deductedmark > 0
+               AND gg.rawgrade IS NOT NULL
+               AND gi.itemtype = 'mod'
+               AND gi.itemmodule = 'assign'
+               AND ag.grade IS NOT NULL
+               AND ag.grade <> -1
+               $singlecoursesql";
+    $candidates = $DB->get_recordset_sql($sql, $params);
+    foreach ($candidates as $candidate) {
+        if (grade_floats_different((float)$candidate->rawgrade, (float)$candidate->authoritativegrade)) {
+            $affectedcourseids[$candidate->courseid] = true;
+        }
+    }
+    $candidates->close();
+
+    foreach (array_keys($affectedcourseids) as $affectedcourseid) {
         // Check to see if the gradebook freeze is already in effect.
         $gradebookfreeze = get_config('core', 'gradebook_calculations_freeze_' . $affectedcourseid);
         if (!$gradebookfreeze) {
-            set_config('gradebook_calculations_freeze_' . $affectedcourseid, 20260808);
+            set_config(
+                'gradebook_calculations_freeze_' . $affectedcourseid,
+                \core_grades\penalty_manager::PENALTY_CALCULATION_FREEZE_VERSION
+            );
         }
     }
 }

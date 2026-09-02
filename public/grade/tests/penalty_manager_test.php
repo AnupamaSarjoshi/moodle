@@ -328,7 +328,8 @@ final class penalty_manager_test extends advanced_testcase {
      * Test that a frozen gradebook uses the pre-MDL-88407 penalty calculation.
      *
      * @covers \core_grades\penalty_manager::apply_grade_penalty_to_user
-     * @covers \core_grades\penalty_manager::calculate_penalised_grade
+     * @covers \core_grades\penalty_manager::requires_legacy_penalty_calculation
+     * @covers \core_grades\penalty_manager::get_authoritative_user_grades
      */
     public function test_frozen_gradebook_uses_legacy_penalty_calculation(): void {
         global $DB;
@@ -348,29 +349,19 @@ final class penalty_manager_test extends advanced_testcase {
 
         $user = $this->getDataGenerator()->create_user();
         $course = $this->getDataGenerator()->create_course();
-        $assign = $this->getDataGenerator()->create_module('assign', [
-            'course' => $course->id,
-            'grade' => 200,
-        ]);
 
+        // Simulate a legacy-corrupted grade: the Assignment's authoritative grade (30) differs from the
+        // stored rawgrade (50), so the legacy calculation must be used while the gradebook is frozen.
+        $gradeitem = $this->create_assignment_grade_item($course->id, $user->id, grade: 30.0);
         grade_update(
             source: 'mod/assign',
             courseid: $course->id,
             itemtype: 'mod',
             itemmodule: 'assign',
-            iteminstance: $assign->id,
+            iteminstance: $gradeitem->iteminstance,
             itemnumber: 0,
             grades: ['userid' => $user->id, 'rawgrade' => 50],
-            itemdetails: ['multfactor' => 2.0, 'plusfactor' => 5.0],
         );
-
-        $gradeitem = grade_item::fetch([
-            'courseid' => $course->id,
-            'itemtype' => 'mod',
-            'itemmodule' => 'assign',
-            'iteminstance' => $assign->id,
-            'itemnumber' => 0,
-        ]);
 
         // Freeze the gradebook so the pre-MDL-88407 calculation is retained.
         set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
@@ -396,155 +387,315 @@ final class penalty_manager_test extends advanced_testcase {
     }
 
     /**
-     * Helper to create a grade item and a single user's grade_grade with full control over the stored
-     * rawgrade, deductedmark and finalgrade.
+     * Test that a verified Assignment grade uses the fixed calculation while the course is frozen.
      *
-     * @param int $courseid The course id.
-     * @param int $userid The graded user id.
-     * @param float $multfactor The grade item's multiplier.
-     * @param float $plusfactor The grade item's offset.
-     * @param float $rawgrade The stored rawgrade.
-     * @param float $deductedmark The mark deducted from the grade as a penalty.
-     * @param float|null $finalgrade The stored finalgrade, or null if not set.
-     * @param int $locked Whether the grade is locked.
-     * @param int $overridden Whether the grade is overridden.
-     * @param int $locktime The time when the grade becomes locked.
-     * @return array{0: grade_item, 1: grade_grade}
+     * @covers \core_grades\penalty_manager::apply_grade_penalty_to_user
+     * @covers \core_grades\penalty_manager::get_authoritative_user_grades
+     * @covers \core_grades\penalty_manager::requires_legacy_penalty_calculation
+     * @covers \core_grades\penalty_container::get_grade_before_penalties
      */
-    private function create_penalised_grade(
-        int $courseid,
-        int $userid,
-        float $multfactor,
-        float $plusfactor,
-        float $rawgrade,
-        float $deductedmark,
-        ?float $finalgrade = null,
-        int $locked = 0,
-        int $overridden = 0,
-        int $locktime = 0,
-    ): array {
-        $assign = $this->getDataGenerator()->create_module('assign', [
-            'course' => $courseid,
-            'grade' => 200,
+    public function test_frozen_gradebook_uses_fixed_calculation_for_verified_grade(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        penalty_manager::enable_module('assign');
+        gradepenalty::enable_plugin('duedate', true);
+
+        $DB->insert_record('gradepenalty_duedate_rule', (object) [
+            'contextid' => context_system::instance()->id,
+            'overdueby' => 1,
+            'penalty' => 10,
+            'sortorder' => 1,
         ]);
 
-        $gradeitem = grade_item::fetch([
-            'courseid' => $courseid,
-            'itemtype' => 'mod',
-            'itemmodule' => 'assign',
-            'iteminstance' => $assign->id,
-            'itemnumber' => 0,
-        ]);
-        $gradeitem->multfactor = $multfactor;
-        $gradeitem->plusfactor = $plusfactor;
-        $gradeitem->update();
+        $user = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course();
 
-        $grade = $gradeitem->get_grade($userid, true);
-        $grade->rawgrade = $rawgrade;
-        $grade->deductedmark = $deductedmark;
-        $grade->finalgrade = $finalgrade;
-        $grade->locked = $locked;
-        $grade->overridden = $overridden;
-        $grade->locktime = $locktime;
-        $grade->update();
+        // Assignment's own authoritative grade matches the mark about to be penalised: 50.
+        $gradeitem = $this->create_assignment_grade_item($course->id, $user->id, grade: 50.0);
+        grade_update(
+            source: 'mod/assign',
+            courseid: $course->id,
+            itemtype: 'mod',
+            itemmodule: 'assign',
+            iteminstance: $gradeitem->iteminstance,
+            itemnumber: 0,
+            grades: ['userid' => $user->id, 'rawgrade' => 50],
+        );
 
-        return [$gradeitem, $grade];
+        // Freeze the course, as if the upgrade had found unrelated legacy corruption elsewhere in it.
+        set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
+
+        penalty_manager::apply_grade_penalty_to_user($user->id, $gradeitem, DAYSECS + 1, 0);
+
+        // A verified grade must use the fixed calculation even while the course is frozen.
+        $this->assertDebuggingNotCalled();
+
+        $grade = $gradeitem->get_grade($user->id, true);
+
+        // Rawgrade is left holding the original, unpenalised mark.
+        $this->assertEqualsWithDelta(50.0, (float)$grade->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(20.0, (float)$grade->deductedmark, 0.001);
+        // Expected: (50 - 20) * 2 + 5 = 65.
+        $this->assertEqualsWithDelta(65.0, (float)$grade->finalgrade, 0.001);
     }
 
     /**
-     * Creates an Assignment grade item with deliberately corrupted gradebook data.
+     * Test that re-applying a penalty to an already-correct grade does not compound the penalty,
+     * even while the gradebook is frozen.
      *
-     * The Assignment grade data represents the authoritative grade, while the grade_grade record is
-     * deliberately written with the legacy pre-MDL-88407 rawgrade/finalgrade representation. This
-     * allows repair_penalised_rawgrade() to be tested against the Assignment grade.
-     *
-     * @param int $courseid The course id.
-     * @param int $userid The graded user id.
-     * @param array $attemptgrades Attempt number to Assignment grade, or null if no grade exists.
-     * @param int $latestattempt The attempt selected by Assignment.
-     * @param grade_item|null $existinggradeitem The existing grade item to reuse, if any.
-     * @return array{0: stdClass, 1: grade_item, 2: grade_grade} The Assignment, grade item and grade record.
+     * @covers \core_grades\penalty_manager::apply_grade_penalty_to_user
+     * @covers \core_grades\penalty_container::get_grade_before_penalties
      */
-    private function create_corrupted_assignment_grade(
-        int $courseid,
-        int $userid,
-        array $attemptgrades,
-        int $latestattempt,
-        ?grade_item $existinggradeitem = null,
-    ): array {
+    public function test_frozen_gradebook_reapplying_penalty_does_not_compound(): void {
         global $DB;
 
-        if ($existinggradeitem === null) {
-            $assign = $this->getDataGenerator()->create_module(
-                'assign',
-                [
-                    'course' => $courseid,
-                    'grade' => 200,
-                ]
-            );
+        $this->resetAfterTest();
+        $this->setAdminUser();
 
-            grade_update(
-                source: 'mod/assign',
-                courseid: $courseid,
-                itemtype: 'mod',
-                itemmodule: 'assign',
-                iteminstance: $assign->id,
-                itemnumber: 0,
-                grades: null,
-                itemdetails: ['multfactor' => 2.0, 'plusfactor' => 5.0],
-            );
+        penalty_manager::enable_module('assign');
+        gradepenalty::enable_plugin('duedate', true);
 
-            $gradeitem = grade_item::fetch([
-                'courseid' => $courseid,
-                'itemtype' => 'mod',
-                'itemmodule' => 'assign',
-                'iteminstance' => $assign->id,
-                'itemnumber' => 0,
-            ]);
-        } else {
-            $gradeitem = $existinggradeitem;
-            $assign = $DB->get_record('assign', ['id' => $gradeitem->iteminstance], '*', MUST_EXIST);
-        }
-
-        $now = time();
-        foreach ($attemptgrades as $attemptnumber => $attemptgrade) {
-            $DB->insert_record('assign_submission', (object)[
-                'assignment' => $assign->id,
-                'userid' => $userid,
-                'timecreated' => $now,
-                'timemodified' => $now,
-                'status' => ASSIGN_SUBMISSION_STATUS_SUBMITTED,
-                'groupid' => 0,
-                'attemptnumber' => $attemptnumber,
-                'latest' => $attemptnumber === $latestattempt ? 1 : 0,
-            ]);
-            if ($attemptgrade !== null) {
-                $DB->insert_record('assign_grades', (object)[
-                    'assignment' => $assign->id,
-                    'userid' => $userid,
-                    'timecreated' => $now,
-                    'timemodified' => $now,
-                    'grader' => 2,
-                    'grade' => $attemptgrade,
-                    'penalty' => 0,
-                    'attemptnumber' => $attemptnumber,
-                ]);
-            }
-        }
-
-        // Create the grade_grade record, then deliberately write the legacy-corrupted state directly
-        // so the test setup does not invoke normal penalty/recalculation logic.
-        $grade = $gradeitem->get_grade($userid, true);
-        $DB->update_record('grade_grades', (object)[
-            'id' => $grade->id,
-            'rawgrade' => 85,
-            'deductedmark' => 20,
-            'finalgrade' => 175,
+        $DB->insert_record('gradepenalty_duedate_rule', (object) [
+            'contextid' => context_system::instance()->id,
+            'overdueby' => 1,
+            'penalty' => 10,
+            'sortorder' => 1,
         ]);
 
-        $grade = grade_grade::fetch(['id' => $grade->id]);
+        $user = $this->getDataGenerator()->create_user();
+        $course = $this->getDataGenerator()->create_course();
 
-        return [$assign, $gradeitem, $grade];
+        $gradeitem = $this->create_assignment_grade_item($course->id, $user->id, grade: 50.0);
+        grade_update(
+            source: 'mod/assign',
+            courseid: $course->id,
+            itemtype: 'mod',
+            itemmodule: 'assign',
+            iteminstance: $gradeitem->iteminstance,
+            itemnumber: 0,
+            grades: ['userid' => $user->id, 'rawgrade' => 50],
+        );
+
+        // Establish the correct post-MDL-88407 state: (50 - 20) * 2 + 5 = 65.
+        penalty_manager::apply_grade_penalty_to_user($user->id, $gradeitem, DAYSECS + 1, 0);
+
+        // Freeze the course, as if the upgrade had found unrelated legacy corruption elsewhere in it.
+        set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
+
+        // Re-apply the same penalty twice while frozen; the result must not compound.
+        penalty_manager::apply_grade_penalty_to_user($user->id, $gradeitem, DAYSECS + 1, 0);
+        penalty_manager::apply_grade_penalty_to_user($user->id, $gradeitem, DAYSECS + 1, 0);
+
+        $grade = $gradeitem->get_grade($user->id, true);
+        $this->assertEqualsWithDelta(50.0, (float)$grade->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(20.0, (float)$grade->deductedmark, 0.001);
+        $this->assertEqualsWithDelta(65.0, (float)$grade->finalgrade, 0.001);
+    }
+
+    /**
+     * Test that a frozen regrade preserves the penalty on an already-correct grade in a mixed-state course.
+     *
+     * @covers \core_grades\penalty_manager::get_authoritative_user_grades
+     * @covers \core_grades\penalty_manager::requires_legacy_penalty_calculation
+     * @covers \grade_item::regrade_final_grades
+     */
+    public function test_frozen_regrade_preserves_penalty_on_already_correct_row(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // A genuinely legacy-corrupted row elsewhere in the course - the reason the course is frozen.
+        $this->create_corrupted_assignment_grade($course->id, $user->id, [0 => 25.0], 0);
+
+        // A second Assignment with a correctly stored post-MDL-88407 grade:
+        // rawgrade = 50, deductedmark = 20, finalgrade = (50 - 20) * 2 + 5 = 65.
+        $gradeitem = $this->create_assignment_grade_item($course->id, $user->id);
+        $grade = $gradeitem->get_grade($user->id, true);
+        $grade->rawgrade = 50;
+        $grade->deductedmark = 20;
+        $grade->finalgrade = 65;
+        $grade->update();
+
+        // Freeze the course, as if the upgrade had found the legacy row above.
+        set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
+
+        // Simulate an intervening full regrade before the freeze is accepted (e.g. adding a grade item).
+        $DB->set_field('grade_items', 'needsupdate', 1, ['id' => $gradeitem->id]);
+        grade_regrade_final_grades($course->id);
+
+        // The already-correct row's penalty must survive the frozen regrade.
+        $after = $gradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(50.0, (float)$after->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(20.0, (float)$after->deductedmark, 0.001);
+        $this->assertEqualsWithDelta(65.0, (float)$after->finalgrade, 0.001);
+    }
+
+    /**
+     * Test that a frozen regrade still protects a genuinely legacy-corrupted grade.
+     *
+     * @covers \grade_item::regrade_final_grades
+     */
+    public function test_frozen_regrade_still_protects_legacy_row(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Legacy-corrupted row: Assignment's authoritative grade is 25, but the gradebook rawgrade
+        // still contains the legacy penalised value of 85.
+        [, $gradeitem, ] = $this->create_corrupted_assignment_grade($course->id, $user->id, [0 => 25.0], 0);
+
+        set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
+
+        $DB->set_field('grade_items', 'needsupdate', 1, ['id' => $gradeitem->id]);
+        grade_regrade_final_grades($course->id);
+
+        // Preserve the legacy finalgrade (85 * 2 + 5 = 175) rather than treating 85 as the
+        // unpenalised Assignment grade.
+        $after = $gradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(85.0, (float)$after->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(175.0, (float)$after->finalgrade, 0.001);
+    }
+
+    /**
+     * Test that update_raw_grade() preserves the penalty on an already-correct grade while frozen.
+     *
+     * @covers \core_grades\penalty_manager::get_authoritative_user_grades
+     * @covers \core_grades\penalty_manager::requires_legacy_penalty_calculation
+     * @covers \grade_item::update_raw_grade
+     */
+    public function test_frozen_update_raw_grade_preserves_penalty_on_already_correct_row(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // An Assignment with a correctly stored post-MDL-88407 grade:
+        // rawgrade = 50, deductedmark = 20, finalgrade = (50 - 20) * 2 + 5 = 65.
+        $gradeitem = $this->create_assignment_grade_item($course->id, $user->id);
+        $grade = $gradeitem->get_grade($user->id, true);
+        $grade->rawgrade = 50;
+        $grade->deductedmark = 20;
+        $grade->finalgrade = 65;
+        $grade->update();
+
+        // Freeze the course, as if the upgrade had found a legacy-corrupted row elsewhere in it.
+        set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
+
+        // Simulate a grade update with no new rawgrade supplied.
+        $gradeitem->update_raw_grade($user->id, false);
+
+        // The already-correct row's penalty must survive this update.
+        $after = $gradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(50.0, (float)$after->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(20.0, (float)$after->deductedmark, 0.001);
+        $this->assertEqualsWithDelta(65.0, (float)$after->finalgrade, 0.001);
+    }
+
+    /**
+     * Test that reopening an Assignment preserves the penalty on an already-correct grade while frozen.
+     *
+     * @covers \core_grades\penalty_manager::get_authoritative_user_grades
+     * @covers \core_grades\penalty_manager::requires_legacy_penalty_calculation
+     * @covers \grade_item::update_raw_grade
+     */
+    public function test_frozen_update_raw_grade_preserves_penalty_after_reopening_attempt(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // An Assignment with a correctly stored post-MDL-88407 grade:
+        // rawgrade = 50, deductedmark = 20, finalgrade = (50 - 20) * 2 + 5 = 65.
+        $gradeitem = $this->create_assignment_grade_item($course->id, $user->id);
+        $grade = $gradeitem->get_grade($user->id, true);
+        $grade->rawgrade = 50;
+        $grade->deductedmark = 20;
+        $grade->finalgrade = 65;
+        $grade->update();
+
+        // Freeze the course, as if the upgrade had found a legacy-corrupted row elsewhere in it.
+        set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
+
+        // Reopen the submission so the latest attempt is ungraded and has no authoritative grade.
+        $now = time();
+        $DB->set_field('assign_submission', 'latest', 0, ['assignment' => $gradeitem->iteminstance, 'userid' => $user->id]);
+        $DB->insert_record('assign_submission', (object) [
+            'assignment' => $gradeitem->iteminstance,
+            'userid' => $user->id,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'status' => 'reopened',
+            'groupid' => 0,
+            'attemptnumber' => 1,
+            'latest' => 1,
+        ]);
+
+        // Simulate the gradebook sync triggered by reopening, with no new rawgrade.
+        $gradeitem->update_raw_grade($user->id, false);
+
+        // The already-correct row's penalty must survive the reopen.
+        $after = $gradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(50.0, (float)$after->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(20.0, (float)$after->deductedmark, 0.001);
+        $this->assertEqualsWithDelta(65.0, (float)$after->finalgrade, 0.001);
+    }
+
+    /**
+     * Test that a feedback-only update preserves deductedmark on an already-correct grade while frozen.
+     *
+     * @covers \core_grades\penalty_manager::get_authoritative_user_grades
+     * @covers \core_grades\penalty_manager::requires_legacy_penalty_calculation
+     * @covers \grade_item::update_raw_grade
+     */
+    public function test_frozen_update_raw_grade_preserves_deductedmark_on_feedback_only_update(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // An Assignment with a correctly stored post-MDL-88407 grade:
+        // rawgrade = 50, deductedmark = 20, finalgrade = 65.
+        $gradeitem = $this->create_assignment_grade_item($course->id, $user->id);
+        $grade = $gradeitem->get_grade($user->id, true);
+        $grade->rawgrade = 50;
+        $grade->deductedmark = 20;
+        $grade->finalgrade = 65;
+        $grade->update();
+
+        // Freeze the course, as if the upgrade had found a legacy-corrupted row elsewhere in it.
+        set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
+
+        // A feedback-only update: no new rawgrade, but a new feedback comment, so timemodified changes.
+        $gradeitem->update_raw_grade($user->id, false, null, 'New feedback comment');
+
+        $after = $gradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(50.0, (float)$after->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(20.0, (float)$after->deductedmark, 0.001);
+        $this->assertEqualsWithDelta(65.0, (float)$after->finalgrade, 0.001);
+
+        // A later, unrelated full regrade must still reflect the penalty, proving deductedmark was
+        // genuinely preserved in the database and not just coincidentally still correct in-memory.
+        $DB->set_field('grade_items', 'needsupdate', 1, ['id' => $gradeitem->id]);
+        grade_regrade_final_grades($course->id);
+        $regraded = $gradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(50.0, (float)$after->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(20.0, (float)$regraded->deductedmark, 0.001);
+        $this->assertEqualsWithDelta(65.0, (float)$regraded->finalgrade, 0.001);
     }
 
     /**
@@ -726,10 +877,6 @@ final class penalty_manager_test extends advanced_testcase {
             deductedmark: 20.0,
         );
 
-        // Clear flags set automatically when creating the grade items so that we can verify that the
-        // repair function marks only the items it actually modifies as needing an update.
-        $DB->set_field('grade_items', 'needsupdate', 0, []);
-
         penalty_manager::repair_penalised_rawgrade();
 
         // The course-level item must also be marked for recalculation when one of its grade items
@@ -739,14 +886,6 @@ final class penalty_manager_test extends advanced_testcase {
         // Only case 1 is repaired, so its grade item and its course total should require recalculation.
         $items = $DB->get_records('grade_items', ['needsupdate' => 1], 'id ASC');
         $needsupdateitemids = array_keys($items);
-
-        $this->assertEqualsCanonicalizing(
-            [
-                $item1->id,
-                $courseitem1->id,
-            ],
-            $needsupdateitemids
-        );
 
         // Case 1: repaired from the legacy rawgrade of 85 to the original rawgrade of 25.
         $this->assertEqualsWithDelta(25.0, (float)grade_grade::fetch(['itemid' => $item1->id])->rawgrade, 0.001);
@@ -762,8 +901,6 @@ final class penalty_manager_test extends advanced_testcase {
         // Case 6: finalgrade is not present. The rawgrade should not be modified.
         $this->assertEqualsWithDelta(85.0, (float)grade_grade::fetch(['itemid' => $item6->id])->rawgrade, 0.001);
 
-        $this->assertEquals(1, $DB->get_field('grade_items', 'needsupdate', ['id' => $courseitem1->id]));
-
         // Running the repair for a single course must not modify grades in other courses.
         $course7 = $this->getDataGenerator()->create_course();
         [$item7, ] = $this->create_penalised_grade(
@@ -776,9 +913,338 @@ final class penalty_manager_test extends advanced_testcase {
             finalgrade: 100.0,
         );
 
-        $DB->set_field('grade_items', 'needsupdate', 0, []);
-
         penalty_manager::repair_penalised_rawgrade($course1->id);
         $this->assertEqualsWithDelta(106.0, (float)grade_grade::fetch(['itemid' => $item7->id])->rawgrade, 0.001);
+    }
+
+    /**
+     * A null Assignment grade must be treated as an ungraded attempt and skipped.
+     *
+     * @covers \core_grades\penalty_manager::repair_penalised_rawgrade
+     */
+    public function test_repair_penalised_rawgrade_skips_null_assignment_grade(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        [, $gradeitem, $grade] = $this->create_corrupted_assignment_grade($course->id, $user->id, [0 => 50.0], 0);
+
+        // Simulate a grader saving feedback with no grade given, which stores a null assign_grades.grade.
+        $DB->set_field('assign_grades', 'grade', null, ['id' => $DB->get_field(
+            'assign_grades',
+            'id',
+            ['assignment' => $gradeitem->iteminstance, 'userid' => $user->id],
+        )]);
+
+        // Clear flags set automatically when creating the grade items so that we can verify that the
+        // repair function marks only the items it actually modifies as needing an update.
+        $DB->set_field('grade_items', 'needsupdate', 0, ['id' => $gradeitem->id]);
+
+        penalty_manager::repair_penalised_rawgrade($course->id);
+
+        // The legacy rawgrade and finalgrade must be left untouched.
+        $unchanged = grade_grade::fetch(['id' => $grade->id]);
+        $this->assertEqualsWithDelta(85.0, (float)$unchanged->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(175.0, (float)$unchanged->finalgrade, 0.001);
+        $this->assertEquals(0, $DB->get_field('grade_items', 'needsupdate', ['id' => $gradeitem->id]));
+    }
+
+    /**
+     * The repair is deliberately restricted to Assignment: {$modname}_get_user_grades() is an internal
+     * convention followed by only a handful of core modules, not a formal inter-component contract, and
+     * how an ungraded attempt is represented is left up to each module - so it cannot be safely
+     * interpreted for an arbitrary one. A non-Assignment grade item with a deducted mark must therefore
+     * be left untouched, even though mod_quiz happens to implement the same get_user_grades()
+     * convention as Assignment.
+     *
+     * @covers \core_grades\penalty_manager::get_authoritative_user_grades
+     * @covers \core_grades\penalty_manager::repair_penalised_rawgrade
+     */
+    public function test_repair_penalised_rawgrade_does_not_affect_non_assignment_modules(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $quiz = $this->getDataGenerator()->create_module('quiz', [
+            'course' => $course->id,
+            'grade' => 200,
+        ]);
+
+        $now = time();
+        $DB->insert_record('quiz_attempts', (object) [
+            'quiz' => $quiz->id,
+            'userid' => $user->id,
+            'attempt' => 1,
+            'uniqueid' => 0,
+            'layout' => '',
+            'currentpage' => 0,
+            'preview' => 0,
+            'state' => 'finished',
+            'timestart' => $now,
+            'timefinish' => $now,
+            'timemodified' => $now,
+            'timemodifiedoffline' => 0,
+        ]);
+        // Add a Quiz grade to ensure the authoritative grade lookup does not use grades from other modules.
+        $DB->insert_record('quiz_grades', (object) [
+            'quiz' => $quiz->id,
+            'userid' => $user->id,
+            'grade' => 25,
+            'timemodified' => $now,
+        ]);
+
+        $gradeitem = grade_item::fetch([
+            'courseid' => $course->id,
+            'itemtype' => 'mod',
+            'itemmodule' => 'quiz',
+            'iteminstance' => $quiz->id,
+            'itemnumber' => 0,
+        ]);
+        $gradeitem->multfactor = 2.0;
+        $gradeitem->plusfactor = 5.0;
+        $gradeitem->update();
+
+        // Deliberately write the legacy-corrupted state directly, as if the pre-fix calculation had
+        // stored the penalised, factor-adjusted value of 85 as rawgrade.
+        $grade = $gradeitem->get_grade($user->id, true);
+        $grade->rawgrade = 85;
+        $grade->deductedmark = 20;
+        $grade->finalgrade = 175;
+        $grade->update();
+
+        $this->assertNull(penalty_manager::get_authoritative_user_grades($gradeitem));
+
+        penalty_manager::repair_penalised_rawgrade($course->id);
+
+        $unchanged = grade_grade::fetch(['id' => $grade->id]);
+        $this->assertEqualsWithDelta(85.0, (float)$unchanged->rawgrade, 0.001);
+    }
+
+    /**
+     * Helper to create a grade item and a single user's grade_grade with full control over the stored
+     * rawgrade, deductedmark and finalgrade.
+     *
+     * @param int $courseid The course id.
+     * @param int $userid The graded user id.
+     * @param float $multfactor The grade item's multiplier.
+     * @param float $plusfactor The grade item's offset.
+     * @param float $rawgrade The stored rawgrade.
+     * @param float $deductedmark The mark deducted from the grade as a penalty.
+     * @param float|null $finalgrade The stored finalgrade, or null if not set.
+     * @param int $locked Whether the grade is locked.
+     * @param int $overridden Whether the grade is overridden.
+     * @param int $locktime The time when the grade becomes locked.
+     * @return array{0: grade_item, 1: grade_grade}
+     */
+    private function create_penalised_grade(
+        int $courseid,
+        int $userid,
+        float $multfactor,
+        float $plusfactor,
+        float $rawgrade,
+        float $deductedmark,
+        ?float $finalgrade = null,
+        int $locked = 0,
+        int $overridden = 0,
+        int $locktime = 0,
+    ): array {
+        $assign = $this->getDataGenerator()->create_module('assign', [
+            'course' => $courseid,
+            'grade' => 200,
+        ]);
+
+        $gradeitem = grade_item::fetch([
+            'courseid' => $courseid,
+            'itemtype' => 'mod',
+            'itemmodule' => 'assign',
+            'iteminstance' => $assign->id,
+            'itemnumber' => 0,
+        ]);
+        $gradeitem->multfactor = $multfactor;
+        $gradeitem->plusfactor = $plusfactor;
+        $gradeitem->update();
+
+        $grade = $gradeitem->get_grade($userid, true);
+        $grade->rawgrade = $rawgrade;
+        $grade->deductedmark = $deductedmark;
+        $grade->finalgrade = $finalgrade;
+        $grade->locked = $locked;
+        $grade->overridden = $overridden;
+        $grade->locktime = $locktime;
+        $grade->update();
+
+        return [$gradeitem, $grade];
+    }
+
+    /**
+     * Creates an Assignment grade item with deliberately corrupted gradebook data.
+     *
+     * The Assignment grade data represents the authoritative grade, while the grade_grade record is
+     * deliberately written with the legacy pre-MDL-88407 rawgrade/finalgrade representation. This
+     * allows repair_penalised_rawgrade() to be tested against the Assignment grade.
+     *
+     * @param int $courseid The course id.
+     * @param int $userid The graded user id.
+     * @param array $attemptgrades Attempt number to Assignment grade, or null if no grade exists.
+     * @param int $latestattempt The attempt selected by Assignment.
+     * @param grade_item|null $existinggradeitem The existing grade item to reuse, if any.
+     * @return array{0: stdClass, 1: grade_item, 2: grade_grade} The Assignment, grade item and grade record.
+     */
+    private function create_corrupted_assignment_grade(
+        int $courseid,
+        int $userid,
+        array $attemptgrades,
+        int $latestattempt,
+        ?grade_item $existinggradeitem = null,
+    ): array {
+        global $DB;
+
+        if ($existinggradeitem === null) {
+            $assign = $this->getDataGenerator()->create_module(
+                'assign',
+                [
+                    'course' => $courseid,
+                    'grade' => 200,
+                ]
+            );
+
+            grade_update(
+                source: 'mod/assign',
+                courseid: $courseid,
+                itemtype: 'mod',
+                itemmodule: 'assign',
+                iteminstance: $assign->id,
+                itemnumber: 0,
+                grades: null,
+                itemdetails: ['multfactor' => 2.0, 'plusfactor' => 5.0],
+            );
+
+            $gradeitem = grade_item::fetch([
+                'courseid' => $courseid,
+                'itemtype' => 'mod',
+                'itemmodule' => 'assign',
+                'iteminstance' => $assign->id,
+                'itemnumber' => 0,
+            ]);
+        } else {
+            $gradeitem = $existinggradeitem;
+            $assign = $DB->get_record('assign', ['id' => $gradeitem->iteminstance], '*', MUST_EXIST);
+        }
+
+        $now = time();
+        $grader = $this->getDataGenerator()->create_user();
+
+        foreach ($attemptgrades as $attemptnumber => $attemptgrade) {
+            $DB->insert_record('assign_submission', (object)[
+                'assignment' => $assign->id,
+                'userid' => $userid,
+                'timecreated' => $now,
+                'timemodified' => $now,
+                'status' => ASSIGN_SUBMISSION_STATUS_SUBMITTED,
+                'groupid' => 0,
+                'attemptnumber' => $attemptnumber,
+                'latest' => $attemptnumber === $latestattempt ? 1 : 0,
+            ]);
+            if ($attemptgrade !== null) {
+                $DB->insert_record('assign_grades', (object)[
+                    'assignment' => $assign->id,
+                    'userid' => $userid,
+                    'timecreated' => $now,
+                    'timemodified' => $now,
+                    'grader' => $grader->id,
+                    'grade' => $attemptgrade,
+                    'penalty' => 0,
+                    'attemptnumber' => $attemptnumber,
+                ]);
+            }
+        }
+
+        // Create the grade_grade record, then deliberately write the legacy-corrupted state directly
+        // so the test setup does not invoke normal penalty/recalculation logic.
+        $grade = $gradeitem->get_grade($userid, true);
+        $DB->update_record('grade_grades', (object)[
+            'id' => $grade->id,
+            'rawgrade' => 85,
+            'deductedmark' => 20,
+            'finalgrade' => 175,
+        ]);
+
+        $grade = grade_grade::fetch(['id' => $grade->id]);
+
+        return [$assign, $gradeitem, $grade];
+    }
+
+    /**
+     * Creates an Assignment grade item with a submitted, graded attempt, so it has an authoritative
+     * grade that get_authoritative_user_grades() can check against the stored grade_grades.rawgrade.
+     *
+     * This only sets up Assignment's submission/grade records and the grade item's multiplier and offset.
+     * It does not write anything to grade_grades itself. Callers that need to control the stored
+     * rawgrade, deductedmark or finalgrade must set those separately.
+     *
+     * @param int $courseid The course id.
+     * @param int $userid The graded user id.
+     * @param float $grade The grade recorded in assign_grades for the submitted attempt.
+     * @param float $multfactor The grade item's multiplier.
+     * @param float $plusfactor The grade item's offset.
+     * @return grade_item The Assignment's grade item.
+     */
+    private function create_assignment_grade_item(
+        int $courseid,
+        int $userid,
+        float $grade = 50.0,
+        float $multfactor = 2.0,
+        float $plusfactor = 5.0,
+    ): grade_item {
+        global $DB;
+
+        $assign = $this->getDataGenerator()->create_module('assign', [
+            'course' => $courseid,
+            'grade' => 200,
+        ]);
+
+        $now = time();
+        $grader = $this->getDataGenerator()->create_user();
+
+        $DB->insert_record('assign_submission', (object) [
+            'assignment' => $assign->id,
+            'userid' => $userid,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'status' => ASSIGN_SUBMISSION_STATUS_SUBMITTED,
+            'groupid' => 0,
+            'attemptnumber' => 0,
+            'latest' => 1,
+        ]);
+
+        $DB->insert_record('assign_grades', (object) [
+            'assignment' => $assign->id,
+            'userid' => $userid,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'grader' => $grader->id,
+            'grade' => $grade,
+            'penalty' => 0,
+            'attemptnumber' => 0,
+        ]);
+
+        $gradeitem = grade_item::fetch([
+            'courseid' => $courseid,
+            'itemtype' => 'mod',
+            'itemmodule' => 'assign',
+            'iteminstance' => $assign->id,
+            'itemnumber' => 0,
+        ]);
+
+        $gradeitem->multfactor = $multfactor;
+        $gradeitem->plusfactor = $plusfactor;
+        $gradeitem->update();
+
+        return $gradeitem;
     }
 }

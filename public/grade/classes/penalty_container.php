@@ -110,11 +110,14 @@ final class penalty_container {
      * @return float The raw grade before any penalty or grade-item adjustment
      */
     public function get_grade_before_penalties(): float {
-        // Check to see if the gradebook is frozen. This allows grades to not be altered at all until a user verifies that they
-        // wish to update the grades.
-        $gradebookcalculationsfreeze = get_config('core', 'gradebook_calculations_freeze_' . $this->gradeitem->courseid);
-        // Stick with the original code if the grade book is frozen.
-        if ($gradebookcalculationsfreeze && (int)$gradebookcalculationsfreeze <= 20260808) {
+        // Use the legacy value for confirmed pre-MDL-88407 grades while frozen.
+        if (
+            penalty_manager::is_frozen_for_legacy_penalty($this->gradeitem->courseid)
+            && penalty_manager::requires_legacy_penalty_calculation(
+                $this->gradegrade,
+                penalty_manager::get_authoritative_user_grades($this->gradeitem)
+            )
+        ) {
             return $this->gradegrade->finalgrade;
         } else {
             return $this->gradegrade->rawgrade;

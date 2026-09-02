@@ -6306,17 +6306,9 @@ class assign {
                 }
             }
 
-            // Check to see if the gradebook is frozen. This allows grades to not be altered at all until a user verifies that they
-            // wish to update the grades.
-            $gradebookcalculationsfreeze = get_config('core', 'gradebook_calculations_freeze_' . $this->get_course()->id);
-            // Stick with the original code if the grade book is frozen.
-            if ($gradebookcalculationsfreeze && (int)$gradebookcalculationsfreeze <= 20260808) {
-                [$penalisedgrade, $deductedmark] = $this->calculate_penalised_grade($grade);
-            } else {
-                // The assign grade for each attempt is not stored in the gradebook.
-                // We need to calculate them from assign_grade records.
-                [$penalisedgrade, $deductedmark] = $this->calculate_penalised_grade($grade, $usergrade);
-            }
+            // The assign grade for each attempt is not stored in the gradebook.
+            // We need to calculate them from assign_grade records.
+            [$penalisedgrade, $deductedmark] = $this->calculate_penalised_grade($grade, $usergrade);
 
             // Now get the gradefordisplay.
             if ($controller) {
@@ -6362,19 +6354,23 @@ class assign {
             $penalisedgrade = $grade->grade - $deductedmark;
         }
 
-        // Check to see if the gradebook is frozen. This allows grades to not be altered at all until a user verifies that they
-        // wish to update the grades.
-        $gradebookcalculationsfreeze = get_config('core', 'gradebook_calculations_freeze_' . $this->get_course()->id);
-        // Stick with the original code if the grade book is frozen.
-        if ($gradebookcalculationsfreeze && (int)$gradebookcalculationsfreeze <= 20260808) {
-            // Do nothing.
-        } else {
+        $gradeitem = $this->get_grade_item();
+        if ($usergraderecord === null) {
+            $usergraderecord = $gradeitem->get_grade($grade->userid, false);
+        }
+
+        // Check whether this student's grade still requires the legacy penalty calculation.
+        // A course-level freeze can contain both legacy and correctly calculated grades.
+        $requireslegacypenalty = $usergraderecord
+            && \core_grades\penalty_manager::is_frozen_for_legacy_penalty($this->get_course()->id)
+            && \core_grades\penalty_manager::requires_legacy_penalty_calculation(
+                $usergraderecord,
+                \core_grades\penalty_manager::get_authoritative_user_grades($gradeitem)
+            );
+
+        if (!$requireslegacypenalty) {
             // Apply the grade-item factors so the returned grade matches the
             // final grade stored in the gradebook.
-            $gradeitem = $this->get_grade_item();
-            if ($usergraderecord === null) {
-                $usergraderecord = $gradeitem->get_grade($grade->userid, false);
-            }
             $penalisedgrade = \core_grades\penalty_manager::apply_grade_item_factors(
                 $penalisedgrade,
                 $gradeitem,

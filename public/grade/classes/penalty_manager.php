@@ -36,6 +36,27 @@ use stdClass;
  */
 class penalty_manager {
     /**
+     * The freeze sentinel value stored in the `gradebook_calculations_freeze_<courseid>` config setting
+     * for courses that may be affected by the pre-MDL-88407 penalty calculation bug.
+     *
+     * A course is treated as needing the legacy penalty calculation while its stored freeze value is
+     * less than or equal to this constant.
+     */
+    const PENALTY_CALCULATION_FREEZE_VERSION = 20260808;
+
+    /**
+     * Whether a course's gradebook is currently frozen specifically for the pre-MDL-88407 penalty
+     * calculation bug.
+     *
+     * @param int $courseid The course id.
+     * @return bool
+     */
+    public static function is_frozen_for_legacy_penalty(int $courseid): bool {
+        $freeze = get_config('core', 'gradebook_calculations_freeze_' . $courseid);
+        return $freeze && (int)$freeze <= self::PENALTY_CALCULATION_FREEZE_VERSION;
+    }
+
+    /**
      * List the modules that support the grade penalty feature.
      *
      * @return array list of supported modules.
@@ -231,11 +252,15 @@ class penalty_manager {
 
         // Update the grade if not in preview mode.
         if (!$previewonly) {
-            // Check to see if the gradebook is frozen. This allows grades to not be altered at all until a user verifies that they
-            // wish to update the grades.
-            $gradebookcalculationsfreeze = get_config('core', 'gradebook_calculations_freeze_' . $gradeitem->courseid);
-            // Stick with the original code if the grade book is frozen.
-            if ($gradebookcalculationsfreeze && (int)$gradebookcalculationsfreeze <= 20260808) {
+            // Check whether the gradebook is frozen and this grade is confirmed to use the legacy
+            // pre-MDL-88407 representation. Only confirmed legacy grades use the legacy calculation,
+            // which stores the already-penalised value in rawgrade. Grades that are already correct,
+            // or cannot be confirmed as legacy, use the normal calculation to avoid corrupting rawgrade
+            // (MDL-89497).
+            if (
+                self::is_frozen_for_legacy_penalty($gradeitem->courseid)
+                && self::requires_legacy_penalty_calculation($grade, self::get_authoritative_user_grades($gradeitem))
+            ) {
                 // Update the raw grade and store the deducted mark.
                 $gradeitem->update_raw_grade($userid, $container->get_grade_after_penalties(), 'gradepenalty');
                 $gradeitem->update_deducted_mark($userid, $container->get_penalty());
@@ -296,24 +321,88 @@ class penalty_manager {
     }
 
     /**
+     * Fetches the authoritative raw grades for every user in an Assignment instance using
+     * Assignment's own get_user_grades() function.
+     *
+     * This is deliberately restricted to mod_assign. {$modname}_get_user_grades() is an internal
+     * convention followed by only a handful of core modules, not a formal inter-component contract.
+     * In particular, how an ungraded attempt is represented is module-specific and cannot safely be
+     * interpreted generically.
+     *
+     * @param grade_item $gradeitem The grade item whose module instance to query.
+     * @return array|null Grades indexed by userid, or null if this is not an Assignment grade item, or
+     *                     Assignment's get_user_grades() could not be found.
+     */
+    public static function get_authoritative_user_grades(grade_item $gradeitem): ?array {
+        global $DB;
+
+        if ($gradeitem->itemtype !== 'mod' || $gradeitem->itemmodule !== 'assign') {
+            return null;
+        }
+
+        $modinstance = $DB->get_record($gradeitem->itemmodule, ['id' => $gradeitem->iteminstance]);
+        if (!$modinstance) {
+            return null;
+        }
+
+        // Use component_callback(), rather than a direct require_once() and call into mod_assign's
+        // own library, so that core_grades does not reach directly into another component's internals.
+        return component_callback('mod_' . $gradeitem->itemmodule, 'get_user_grades', [$modinstance, 0], null);
+    }
+
+    /**
+     * Whether a penalised grade should use the legacy pre-MDL-88407 calculation.
+     *
+     * A legacy calculation is used when the gradebook is frozen and the grade's stored rawgrade
+     * differs from Assignment's authoritative raw grade. Grades for ungraded latest attempts are
+     * not treated as legacy because there is no authoritative grade to compare against.
+     *
+     * If the authoritative grades cannot be obtained, the legacy calculation is used conservatively.
+     *
+     * @param grade_grade $grade The grade to check.
+     * @param array|null $authoritativegrades Assignment grades indexed by userid, or null if unavailable.
+     * @return bool
+     */
+    public static function requires_legacy_penalty_calculation(grade_grade $grade, ?array $authoritativegrades): bool {
+        if ($authoritativegrades === null) {
+            // Not an Assignment grade item, or Assignment's get_user_grades() could not be found - there
+            // is no way to check, so conservatively assume this row may still be legacy-corrupted.
+            return true;
+        }
+
+        if (!isset($authoritativegrades[$grade->userid])) {
+            // No current authoritative grade for this student's latest attempt at all.
+            return false;
+        }
+
+        $originalraw = $authoritativegrades[$grade->userid]->rawgrade;
+
+        // Null and -1 both represent an ungraded attempt - same reasoning as above.
+        if ($originalraw === null || (float)$originalraw === -1.0) {
+            return false;
+        }
+
+        // A genuine mismatch is the positive signal that this row is still legacy-corrupted.
+        return grade_floats_different($grade->rawgrade, $originalraw);
+    }
+
+    /**
      * Repairs rawgrade values left in the legacy representation by MDL-88407.
      *
      * A grade is repaired when:
-     * - it has a deducted mark and a non-null rawgrade;
+     * - it is an Assignment grade with a deducted mark and a non-null rawgrade;
      * - its grade item is unlocked;
      * - the grade itself is unlocked and not overridden;
-     * - it has a final grade; and
-     * - the current Assignment raw grade differs from the stored gradebook rawgrade.
+     * - Assignment's own current raw grade differs from the stored gradebook rawgrade.
      *
-     * The Assignment gradebook API is used as the authoritative source for the current
-     * raw grade. Grades for new, ungraded attempts are skipped.
+     * Assignment's own get_user_grades() function is used as the authoritative source for the current
+     * raw grade (see get_authoritative_user_grades() for why this is restricted to Assignment). Grades
+     * for ungraded attempts are skipped.
      *
      * @param int|null $courseid Specify a course ID to run this script on just one course.
      */
     public static function repair_penalised_rawgrade(?int $courseid = null): void {
-        global $CFG, $DB;
-
-        require_once($CFG->dirroot . '/mod/assign/lib.php');
+        global $DB;
 
         $params = [];
         $singlecoursesql = '';
@@ -331,25 +420,22 @@ class penalty_manager {
                    AND gi.locked = 0
                    AND gg.locked = 0
                    AND gg.overridden = 0
+                   AND gi.itemtype = 'mod'
+                   AND gi.itemmodule = 'assign'
                    AND gi.gradetype = :gradetype
                    $singlecoursesql";
 
         $params['gradetype'] = GRADE_TYPE_VALUE;
         $itemids = $DB->get_fieldset_sql($sql, $params);
 
-        $affecteditemids = [];
-        $affectedcourseids = [];
-
         foreach ($itemids as $itemid) {
             $gradeitem = grade_item::fetch(['id' => $itemid]);
-            // Only Assignment grade items have a raw grade that can be retrieved from
-            // the Assignment gradebook API.
-            if (!$gradeitem || $gradeitem->itemtype !== 'mod' || $gradeitem->itemmodule !== 'assign') {
+            if (!$gradeitem) {
                 continue;
             }
 
-            $assign = $DB->get_record('assign', ['id' => $gradeitem->iteminstance]);
-            if (!$assign) {
+            $modgrades = self::get_authoritative_user_grades($gradeitem);
+            if ($modgrades === null) {
                 continue;
             }
 
@@ -366,39 +452,24 @@ class penalty_manager {
 
             $graderecords = $DB->get_recordset_select('grade_grades', $sql, $params);
             foreach ($graderecords as $graderecord) {
-                // Use Assignment's gradebook API to obtain the raw grade for the current attempt.
-                $assigngrades = assign_get_user_grades($assign, $graderecord->userid);
-
-                if (
-                    !isset($assigngrades[$graderecord->userid])
-                    || (float)$assigngrades[$graderecord->userid]->rawgrade === -1.0
-                ) {
+                if (!isset($modgrades[$graderecord->userid])) {
                     continue;
                 }
 
-                $originalraw = $assigngrades[$graderecord->userid]->rawgrade;
+                $originalraw = $modgrades[$graderecord->userid]->rawgrade;
+
+                // Null and -1 both represent an ungraded attempt, so skip it.
+                if ($originalraw === null || (float)$originalraw === -1.0) {
+                    continue;
+                }
 
                 if (grade_floats_different($graderecord->rawgrade, $originalraw)) {
-                    // Assignment's current raw grade is the authoritative value. If it differs
+                    // The module's current raw grade is the authoritative value. If it differs
                     // from the stored gradebook rawgrade, repair the gradebook value.
                     $DB->set_field('grade_grades', 'rawgrade', $originalraw, ['id' => (int)$graderecord->id]);
-
-                    $affecteditemids[$itemid] = true;
-                    $affectedcourseids[$gradeitem->courseid] = true;
                 }
             }
             $graderecords->close();
-        }
-
-        // Mark the affected grade items for recalculation using the repaired rawgrade.
-        if ($affecteditemids) {
-            [$sql, $params] = $DB->get_in_or_equal(array_keys($affecteditemids));
-            $DB->set_field_select('grade_items', 'needsupdate', 1, "id $sql", $params);
-        }
-        // Mark the affected course totals for recalculation.
-        if ($affectedcourseids) {
-            [$sql, $params] = $DB->get_in_or_equal(array_keys($affectedcourseids));
-            $DB->set_field_select('grade_items', 'needsupdate', 1, "itemtype = 'course' AND courseid $sql", $params);
         }
     }
 

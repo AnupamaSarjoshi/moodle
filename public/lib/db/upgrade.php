@@ -2334,7 +2334,7 @@ function xmldb_main_upgrade($oldversion) {
         upgrade_penalty_calculation_freeze();
 
         // Main savepoint reached.
-        upgrade_main_savepoint(true, 2026081800.01);
+        upgrade_main_savepoint(true, 2026090300.01);
     }
 
     return true;
