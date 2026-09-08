@@ -6365,7 +6365,8 @@ class assign {
             && \core_grades\penalty_manager::is_frozen_for_legacy_penalty($this->get_course()->id)
             && \core_grades\penalty_manager::requires_legacy_penalty_calculation(
                 $usergraderecord,
-                \core_grades\penalty_manager::get_authoritative_user_grades($gradeitem)
+                \core_grades\penalty_manager::get_authoritative_user_grades($gradeitem),
+                $gradeitem
             );
 
         if (!$requireslegacypenalty) {

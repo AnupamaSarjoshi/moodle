@@ -259,7 +259,11 @@ class penalty_manager {
             // (MDL-89497).
             if (
                 self::is_frozen_for_legacy_penalty($gradeitem->courseid)
-                && self::requires_legacy_penalty_calculation($grade, self::get_authoritative_user_grades($gradeitem))
+                && self::requires_legacy_penalty_calculation(
+                    $grade,
+                    self::get_authoritative_user_grades($gradeitem),
+                    $gradeitem
+                )
             ) {
                 // Update the raw grade and store the deducted mark.
                 $gradeitem->update_raw_grade($userid, $container->get_grade_after_penalties(), 'gradepenalty');
@@ -267,11 +271,12 @@ class penalty_manager {
             } else {
                 $oldfinalgrade = $grade->finalgrade;
 
-                // Apply penalty to raw grade first, then apply grade-item factors to compute final grade.
-                // rawgrade is intentionally not updated - it must always hold the original unpenalised source grade.
-                $grade->deductedmark = $container->get_penalty();
-
+                // Read the penalised raw grade before updating deductedmark, as get_grade_after_penalties()
+                // re-checks whether the grade is legacy-corrupted using the current stored grade state.
+                // Updating deductedmark first would cause it to see a partially updated state and could apply
+                // the penalty incorrectly (see test_frozen_gradebook_uses_fixed_calculation_for_verified_grade, MDL-89749).
                 $penalisedraw = $container->get_grade_after_penalties();
+                $grade->deductedmark = $container->get_penalty();
                 $grade->finalgrade = self::apply_grade_item_factors($penalisedraw, $gradeitem, $grade);
 
                 $grade->timemodified = time();
@@ -357,13 +362,23 @@ class penalty_manager {
      * differs from Assignment's authoritative raw grade. Grades for ungraded latest attempts are
      * not treated as legacy because there is no authoritative grade to compare against.
      *
+     * A second check handles cases where the stored rawgrade matches the authoritative grade but the
+     * grade may still be affected by the legacy calculation. It recomputes finalgrade using the stored
+     * rawgrade and deductedmark with the fixed post-MDL-88407 formula, and considers the grade legacy
+     * if this differs from the stored finalgrade.
+     *
      * If the authoritative grades cannot be obtained, the legacy calculation is used conservatively.
      *
      * @param grade_grade $grade The grade to check.
      * @param array|null $authoritativegrades Assignment grades indexed by userid, or null if unavailable.
+     * @param grade_item $gradeitem The grade item, used to recompute the legacy and fixed finalgrade.
      * @return bool
      */
-    public static function requires_legacy_penalty_calculation(grade_grade $grade, ?array $authoritativegrades): bool {
+    public static function requires_legacy_penalty_calculation(
+        grade_grade $grade,
+        ?array $authoritativegrades,
+        grade_item $gradeitem
+    ): bool {
         if ($authoritativegrades === null) {
             // Not an Assignment grade item, or Assignment's get_user_grades() could not be found - there
             // is no way to check, so conservatively assume this row may still be legacy-corrupted.
@@ -382,8 +397,20 @@ class penalty_manager {
             return false;
         }
 
-        // A genuine mismatch is the positive signal that this row is still legacy-corrupted.
-        return grade_floats_different($grade->rawgrade, $originalraw);
+        if (grade_floats_different($grade->rawgrade, $originalraw)) {
+            // A genuine mismatch is the positive signal that this row is still legacy-corrupted.
+            return true;
+        }
+
+        // The stored rawgrade matches the authoritative mark, but that alone can be a coincidence.
+        // The legacy formula applies grade-item factors to rawgrade directly, ignoring deductedmark;
+        // the fixed formula subtracts deductedmark from rawgrade first.
+        $legacyfinalgrade = $gradeitem->adjust_raw_grade($grade->rawgrade, $grade->rawgrademin, $grade->rawgrademax);
+        $fixedpenalisedraw = max($gradeitem->grademin, $grade->rawgrade - $grade->deductedmark);
+        $fixedfinalgrade = $gradeitem->adjust_raw_grade($fixedpenalisedraw, $grade->rawgrademin, $grade->rawgrademax);
+
+        return !grade_floats_different($grade->finalgrade, $legacyfinalgrade)
+            && grade_floats_different($grade->finalgrade, $fixedfinalgrade);
     }
 
     /**

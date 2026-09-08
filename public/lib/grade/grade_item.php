@@ -889,7 +889,7 @@ class grade_item extends grade_object {
                 // penalised grade that has been positively confirmed to still be in that representation.
                 $uselegacypenalty = $frozenlegacypenalty
                     && $grade->deductedmark > 0
-                    && \core_grades\penalty_manager::requires_legacy_penalty_calculation($grade, $authoritativegrades);
+                    && \core_grades\penalty_manager::requires_legacy_penalty_calculation($grade, $authoritativegrades, $this);
 
                 if ($uselegacypenalty) {
                     $grade->finalgrade = $this->adjust_raw_grade($grade->rawgrade, $grade->rawgrademin, $grade->rawgrademax);
@@ -2098,7 +2098,8 @@ class grade_item extends grade_object {
             && $grade->deductedmark > 0
             && \core_grades\penalty_manager::requires_legacy_penalty_calculation(
                 $grade,
-                \core_grades\penalty_manager::get_authoritative_user_grades($this)
+                \core_grades\penalty_manager::get_authoritative_user_grades($this),
+                $this
             );
 
         // update final grade if possible
