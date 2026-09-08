@@ -115,7 +115,8 @@ final class penalty_container {
             penalty_manager::is_frozen_for_legacy_penalty($this->gradeitem->courseid)
             && penalty_manager::requires_legacy_penalty_calculation(
                 $this->gradegrade,
-                penalty_manager::get_authoritative_user_grades($this->gradeitem)
+                penalty_manager::get_authoritative_user_grades($this->gradeitem),
+                $this->gradeitem
             )
         ) {
             return $this->gradegrade->finalgrade;
