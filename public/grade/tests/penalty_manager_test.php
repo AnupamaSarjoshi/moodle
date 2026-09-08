@@ -386,6 +386,9 @@ final class penalty_manager_test extends advanced_testcase {
     /**
      * Test that a verified Assignment grade uses the fixed calculation while the course is frozen.
      *
+     * This also covers the ordering requirement in apply_grade_penalty_to_user(), where the penalised
+     * raw grade must be read before deductedmark is updated (see MDL-89749).
+     *
      * @covers \core_grades\penalty_manager::apply_grade_penalty_to_user
      * @covers \core_grades\penalty_manager::get_authoritative_user_grades
      * @covers \core_grades\penalty_manager::requires_legacy_penalty_calculation
@@ -560,6 +563,51 @@ final class penalty_manager_test extends advanced_testcase {
         $after = $gradeitem->get_final($user->id);
         $this->assertEqualsWithDelta(85.0, (float)$after->rawgrade, 0.001);
         $this->assertEqualsWithDelta(175.0, (float)$after->finalgrade, 0.001);
+    }
+
+    /**
+     * Test that a legacy-corrupted grade whose stored rawgrade coincidentally matches the authoritative
+     * Assignment grade survives an intervening regrade while the course is frozen.
+     *
+     * @covers \core_grades\penalty_manager::requires_legacy_penalty_calculation
+     * @covers \grade_item::regrade_final_grades
+     */
+    public function test_frozen_regrade_protects_legacy_row_with_coincidental_rawgrade(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $user = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        $gradeitem = $this->create_assignment_grade_item(
+            $course->id,
+            $user->id,
+            grade: 50.0,
+            multfactor: 1.0,
+            plusfactor: 20.0,
+        );
+        $grade = $gradeitem->get_grade($user->id, true);
+        $DB->update_record('grade_grades', (object) [
+            'id' => $grade->id,
+            'rawgrade' => 50,
+            'deductedmark' => 20,
+            'finalgrade' => 70,
+        ]);
+
+        // Freeze the course, as if the upgrade had detected this coincidence-affected row.
+        set_config('gradebook_calculations_freeze_' . $course->id, 20260808);
+
+        // Simulate an intervening full regrade before the freeze is accepted (e.g. adding a grade
+        // item to the course), exactly as described in MDL-89749.
+        $DB->set_field('grade_items', 'needsupdate', 1, ['id' => $gradeitem->id]);
+        grade_regrade_final_grades($course->id);
+
+        // The legacy finalgrade must survive the regrade - it must only change after Accept.
+        $after = $gradeitem->get_final($user->id);
+        $this->assertEqualsWithDelta(50.0, (float)$after->rawgrade, 0.001);
+        $this->assertEqualsWithDelta(20.0, (float)$after->deductedmark, 0.001);
+        $this->assertEqualsWithDelta(70.0, (float)$after->finalgrade, 0.001);
     }
 
     /**
